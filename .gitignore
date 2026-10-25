@@ -1,0 +1,12 @@
+node_modules/
+data/
+.cache/
+dist/
+*.log
+desktop/continuer-monitor.exe
+runtime.json
+.env
+.env.*
+access-*.token
+*.pfx
+*.p12

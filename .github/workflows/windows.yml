@@ -1,0 +1,30 @@
+name: Windows checks
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run check:public
+      - run: npm test
+      - run: npm run build:release
+      - run: node scripts/verify-artifact.js dist/portable-marketplace/plugins/codex-continuer
+      - uses: actions/upload-artifact@v7
+        with:
+          name: continuer-windows-portable
+          path: dist/portable-marketplace
+          include-hidden-files: true
+          retention-days: 7
+      - uses: actions/upload-artifact@v7
+        with:
+          name: continuer-release-with-source
+          path: dist/releases
+          retention-days: 7

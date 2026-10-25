@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Continuer · Codex 挂件</title><link rel="icon" href="/favicon.svg"><link rel="stylesheet" href="/widget.css"></head>
+<body>
+<main class="shell">
+  <div id="mini" role="button" tabindex="0" aria-label="展开额度和工作面板" aria-expanded="false" title="点击卡片展开，拖动移动；Ctrl + 滚轮调整大小">
+    <div id="rhine-art" aria-hidden="true"></div>
+    <svg id="gauge-readout" viewBox="0 0 256 256" aria-label="额度与重置倒计时">
+      <g id="quota-readout"><text id="mini-quota" class="quota-number" x="128" y="103" text-anchor="middle">—</text><text class="quota-unit" x="181" y="103">%</text><text id="mini-window" x="128" y="122" text-anchor="middle">五小时可用额度</text><path id="mini-reset-pixels"/><text id="mini-reset" class="reset-fallback" x="128" y="188" text-anchor="middle">待同步</text><text id="mini-reset-label" x="128" y="207" text-anchor="middle">距离重置</text><circle id="quota-dot-primary" cx="122" cy="219" r="2"/><circle id="quota-dot-secondary" cx="134" cy="219" r="2"/></g>
+      <circle cx="128" cy="128" r="106" fill="url(#rhine-signal-scanlines)"/>
+    </svg>
+    <span id="mini-open" aria-hidden="true">↗</span>
+  </div>
+  <section id="panel">
+    <header><div class="rhine-mark" aria-hidden="true"><i></i></div><div class="brand"><strong>CONTINUER<span> / C</span></strong><small>额度监测 · 持续工作</small></div><button data-action="refresh" title="刷新额度" aria-label="刷新额度">↻</button><button id="theme" title="切换主题" aria-label="切换主题">◐</button><button id="collapse" title="收起为仪表" aria-label="收起">−</button><button id="hide" title="隐藏到托盘" aria-label="隐藏到托盘">×</button></header>
+    <div class="scroll">
+      <div class="section-label"><span><em>01</em> 账户额度</span><span id="updated">等待同步</span></div>
+      <div id="quotas" class="quota-grid"></div>
+      <p id="health" class="hint">正在连接本地服务…</p>
+      <div id="storage-status"></div>
+      <div class="scheduler"><span class="status-beacon" aria-hidden="true"></span><div><strong>自动续作 <span>AUTO CONTINUE</span></strong><small id="scheduler-note">额度恢复后接续工作</small></div><label class="switch"><input id="scheduler" type="checkbox" aria-label="自动调度"><span></span></label></div>
+      <div id="approvals"></div>
+      <div class="section-label tasks-heading"><span><em>02</em> 我的工作 <b id="count">0</b></span><div><button data-action="sessions-refresh" aria-label="刷新对话列表">↻ 对话</button><button data-action="new">＋ 新建</button></div></div>
+      <div class="session-picker">
+        <label for="session-select">选择 Codex 对话</label>
+        <select id="session-select"><option value="">正在读取已有对话…</option></select>
+        <div id="session-preview" class="hint">按最近更新排序，选择你正在进行的对话。</div>
+        <div class="session-actions"><button id="session-more" data-action="sessions-more" hidden>更多对话</button><button class="primary" id="add-session" data-action="add-session" disabled>加入我的工作</button></div>
+      </div>
+      <div id="tasks"><p class="empty">正在读取工作记录…</p></div>
+      <details class="section"><summary>工作策略与显示</summary><form id="settings-form">
+        <label>恢复阈值 <span><input type="number" name="minimumRemaining" min="1" max="99" required> %</span></label>
+        <label>同步周期 <span><input type="number" name="pollSeconds" min="10" max="90" required> 秒</span></label>
+        <label>直接执行轮次上限 <span><input type="number" name="maxRounds" min="1" max="100" required> 轮</span></label>
+        <label>原聊天发送上限 <span><input type="number" name="maxWakeSends" min="1" max="100" required> 次</span></label>
+        <label id="follow-label">跟随 Codex 窗口 <input type="checkbox" id="follow"></label>
+        <label class="size-setting">桌面卡片大小 <span><output id="compact-size-value">256 px</output><input id="compact-size" type="range" min="160" max="420" step="4" value="256" aria-label="桌面卡片大小"></span></label>
+        <button id="reset-position" type="button">重置挂件位置</button>
+        <p class="hint">同步周期为 10–90 秒。直接执行受轮次上限约束；原聊天按每条监测记录累计发送次数，到限停止。暂停、重新开启不会清零；提高上限后需手动开启。原聊天工作是否完成需自行确认。</p><button type="submit">保存策略</button>
+      </form></details>
+      <details class="section"><summary>最近活动</summary><div id="logs"></div></details>
+      <footer><span class="footer-mark">C / CONTINUER</span><span>本机保存 · 后台持续工作</span></footer>
+    </div>
+  </section>
+</main>
+<dialog id="modal"><div class="modal-head"><strong id="modal-title"></strong><button id="close" aria-label="关闭对话框">×</button></div><div id="modal-body"></div><p id="error" role="alert"></p></dialog>
+<div id="toast" role="status"></div><script src="/widget.js" type="module"></script>
+</body></html>

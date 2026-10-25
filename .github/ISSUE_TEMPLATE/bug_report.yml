@@ -1,0 +1,20 @@
+name: 缺陷反馈
+description: 提供版本、环境和可复现行为；不要附带私人任务或凭据。
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Continuer 版本与构建号
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 系统、架构、Node 和 Codex 版本
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 最小复现、预期行为与实际行为
+      description: 请脱敏日志，不要上传数据目录、访问令牌、启动链接或聊天内容。
+    validations:
+      required: true

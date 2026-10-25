@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Codex Continuer · 让工作持续向前</title><link rel="icon" href="/favicon.svg"><link rel="stylesheet" href="/style.css"></head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="Codex Continuer 首页"><span class="brand-mark">c<span>↗</span></span><span>Continuer<small>FOR CODEX</small></span></a>
+    <div class="nav-label">工作空间</div>
+    <nav id="nav">
+      <button data-page="overview" class="active"><span data-icon="overview"></span>概览</button>
+      <button data-page="tasks"><span data-icon="tasks"></span>工作任务<span id="nav-count" class="count">0</span></button>
+      <button data-page="quota"><span data-icon="chart"></span>额度监测</button>
+      <button data-page="logs"><span data-icon="logs"></span>活动日志</button>
+      <div class="nav-label second">偏好设置</div>
+      <button data-page="settings"><span data-icon="settings"></span>设置</button>
+    </nav>
+    <div class="sidebar-bottom"><div class="local-card"><span class="status-dot"></span><div>本地工作空间<small>数据保存在此设备</small></div><span data-icon="shield"></span></div><div class="version"><span>Continuer</span><span id="app-version">读取版本…</span></div></div>
+  </aside>
+  <div class="workspace">
+    <header><div class="breadcrumb">工作空间<span>/</span><b id="breadcrumb-current">概览</b></div><div class="header-actions"><span id="connection" class="connection">正在连接</span><button id="theme" class="icon-button" aria-label="切换深浅主题" title="切换主题"><span data-icon="sun"></span></button></div></header>
+    <main id="main" aria-live="polite"><div class="loading">正在载入工作空间…</div></main>
+    <footer><span><i class="status-dot"></i><span id="footer-status">正在连接本地服务</span></span><span id="footer-update">额度数据正在同步</span></footer>
+  </div>
+  <dialog id="modal"><div id="modal-body"></div></dialog><div id="toast" role="status"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

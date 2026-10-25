@@ -1,0 +1,26 @@
+{
+  "name": "codex-continuer",
+  "version": "0.4.0-preview.1",
+  "private": true,
+  "type": "module",
+  "description": "Local Codex quota monitor and resumable task manager",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "demo": "node server/index.js --demo",
+    "widget": "node plugin/open.js",
+    "build:plugin": "node scripts/build-plugin.js",
+    "test": "node --test tests/*.test.js",
+    "check": "node scripts/check.js",
+    "check:public": "node scripts/check-public.js",
+    "doctor": "node scripts/doctor.js",
+    "build:source": "node scripts/build-source.js",
+    "build:release": "node scripts/build-release.js"
+  },
+  "devDependencies": {
+    "electron": "45.0.0"
+  },
+  "license": "GPL-3.0-only"
+}

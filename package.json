@@ -22,5 +22,13 @@
   "devDependencies": {
     "electron": "45.0.0"
   },
-  "license": "GPL-3.0-only"
+  "license": "GPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/empty610/codex-continuer.git"
+  },
+  "homepage": "https://github.com/empty610/codex-continuer#readme",
+  "bugs": {
+    "url": "https://github.com/empty610/codex-continuer/issues"
+  }
 }

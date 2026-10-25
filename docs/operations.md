@@ -67,7 +67,7 @@ node scripts/verify-artifact.js dist/portable-marketplace/plugins/codex-continue
 
 构建先在专用暂存目录按白名单复制，再生成并验证完整 SHA-256 文件清单，最后替换正式包；旧包的过期文件不会残留。替换失败时保留原包。验证清单会检查修改、缺失和多余文件。运行中的服务与插件构建不一致时会明确要求重启。
 
-`.github/workflows/windows.yml` 提供 Windows 检查、测试、便携构建和清单验证。在远程仓库启用后才会运行；本机验证不等于托管 CI 已通过。当前优化没有配置远程仓库、推送代码或发布插件。
+`.github/workflows/windows.yml` 提供 Windows 检查、测试、便携构建和清单验证。官方 Action 固定到发布提交；Electron 在测试前显式安装，避免隐藏窗口测试因缺少运行时而跳过。工作流结果见 [GitHub Actions](https://github.com/empty610/codex-continuer/actions/workflows/windows.yml)，本机验证和托管 CI 分别记录。
 
 回归包含使用独立演示数据和隐藏窗口的 Electron 冒烟测试，检查首屏就绪、隐藏状态和明确退出。受限工具环境若禁止 Electron 读取运行时，应在正常进程权限下运行该测试；不需要关闭应用沙箱或修改运行时 ACL。真实任务状态不用于冒烟测试。
 

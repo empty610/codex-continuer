@@ -10,3 +10,4 @@ runtime.json
 access-*.token
 *.pfx
 *.p12
+/source-manifest.json

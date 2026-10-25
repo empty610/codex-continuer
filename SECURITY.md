@@ -8,6 +8,6 @@ HTTP 服务只绑定 127.0.0.1。所有 `/api/` 读取、实时订阅和控制�
 
 重置凭据前先停止服务和挂件，备份数据，再移除对应 `access-live.token` 或 `access-demo.token`。下次启动创建新令牌，旧页面需通过启动器重新打开。凭据损坏时服务拒绝启动，不自动覆盖可疑文件。不要删除任务状态文件来解决登录问题。
 
-公开仓库启用 GitHub Private vulnerability reporting 后，请通过仓库 Security → Report a vulnerability 私下报告。未启用前，请勿把可利用细节或私人日志放在公开 Issue；维护者应先设置私密联系渠道再正式发布。提供版本、最小复现和脱敏影响说明，不提供凭据或真实聊天数据。
+仓库已启用 GitHub Private vulnerability reporting，请通过 [私密漏洞报告](https://github.com/empty610/codex-continuer/security/advisories/new) 或仓库 Security → Report a vulnerability 私下报告。请勿把可利用细节或私人日志放在公开 Issue。提供版本、最小复现和脱敏影响说明，不提供凭据或真实聊天数据。
 
 这是独立社区工具。原聊天接续受账号额度及 Codex 自身审批、沙箱和执行端状态约束，不绕过额度或权限限制。

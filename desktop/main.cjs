@@ -32,11 +32,28 @@ function diagnostics() {
   const next = JSON.stringify({ ...runtimeConfig.appInfo(), pid: process.pid, ready: isReady, visible: win.isVisible(), ...state(), bounds: win.getBounds() });
   if (next !== lastDiagnostic) { lastDiagnostic = next; try { writeFileSync(join(dataDir, 'widget-status.json'), next); } catch (error) { console.error(`挂件诊断未保存：${error.message}`); } }
 }
-if (!app.requestSingleInstanceLock()) { app.quit(); }
-else if (process.argv.includes('--quit')) { app.quit(); }
+const ownsInstance = app.requestSingleInstanceLock();
+let quitting, shutdownComplete = false;
+if (!ownsInstance) { app.quit(); }
+else if (process.argv.includes('--quit')) { app.whenReady().then(quitAll); }
 else {
-  app.on('second-instance', (_event, argv) => { if (argv.includes('--quit')) { app.quit(); return; } prefs.hidden = false; if (!argv.includes('--auto')) changeExpanded(true); save(); show(!argv.includes('--auto')); });
+  app.on('second-instance', (_event, argv) => { if (argv.includes('--quit')) { void quitAll(); return; } if (closing) return; prefs.hidden = false; if (!argv.includes('--auto')) changeExpanded(true); save(); show(!argv.includes('--auto')); });
   app.whenReady().then(start).catch(error => { dialog.showErrorBox('Continuer 启动失败', error.message); app.quit(); });
+}
+function quitAll() {
+  if (quitting) return quitting;
+  closing = true; isReady = false;
+  pointerDrag?.finish(); cancelTransition(); tracker?.kill(); win?.hide();
+  try { writeFileSync(join(dataDir, 'widget-status.json'), JSON.stringify({ ...runtimeConfig.appInfo(), pid: process.pid, ready: false, exitReason: 'quitting', updatedAt: Date.now() })); } catch {}
+  quitting = (async () => {
+    try {
+      const runtime = await import('../plugin/runtime.js');
+      const { stopBackground } = await import('../plugin/shutdown.js');
+      await stopBackground({ root: runtime.root, dataDir, request: runtime.request, demo: process.env.CONTINUER_DEMO === '1' });
+    } catch (error) { console.error('退出后台进程失败：' + error.message); }
+    finally { shutdownComplete = true; app.quit(); }
+  })();
+  return quitting;
 }
 function state() { return { follow: prefs.follow, expanded: prefs.expanded, hidden: prefs.hidden, preferenceError, tracking: !!anchor, visible: !!win?.isVisible(), compactSize: compactSize(prefs.compactSize), transitioning: !!boundsTimer, transition: pendingTransition ? {id:pendingTransition.id,fromExpanded:pendingTransition.fromExpanded} : null, panelSize, platform: process.platform }; }
 function cancelTransition() {
@@ -190,7 +207,7 @@ async function start() {
       callback({ requestHeaders: details.requestHeaders });
     } catch { callback({ cancel: true }); }
   });
-  win.on('close', event => { if (!closing) { event.preventDefault(); prefs.hidden = true; save(); win.hide(); } });
+  win.on('close', event => { if (!shutdownComplete) { event.preventDefault(); void quitAll(); } });
   // will-move is emitted for native user dragging, not our setBounds calls.
   win.on('will-move', () => { if (!dragging && !pointerDrag.active) beginDrag(); });
   win.on('moved', () => { if (dragging && !pointerDrag.active) finishDrag(); });
@@ -215,6 +232,7 @@ async function start() {
   ipcMain.handle('continuer:control', (event, action, value) => {
     if (!allowed(event)) throw new Error('Untrusted widget request');
     if (action === 'renderer-ready') { isReady = true; show(); return state(); }
+    if (action === 'quit') { setImmediate(() => { void quitAll(); }); return { quitting: true }; }
     if (action === 'transition-ready') { finishTransition(value); return state(); }
     if (action === 'drag-start') {
       if (!Number.isInteger(value) || prefs.expanded || boundsTimer || dragging) return { ok:false };
@@ -245,8 +263,8 @@ async function start() {
     { label: '独立显示面板', click: () => { prefs.follow = false; syncTracker(); reveal(); } },
     { label: '重置挂件位置', click: () => { settledPlacement=null; prefs.offsets = {}; prefs.positions = {}; save(); show(true); } },
     { type: 'separator' },
-    { label: '隐藏挂件（后台继续工作）', click: () => { prefs.hidden = true; save(); show(); } },
-    { label: '退出挂件（后台继续工作）', click: () => app.quit() },
+    { label: '隐藏到托盘', click: () => { prefs.hidden = true; save(); show(); } },
+    { label: '退出 Continuer', click: () => { void quitAll(); } },
   ]);
   const popupMenu = () => {
     if (menuOpen) return;
@@ -265,7 +283,10 @@ async function start() {
   syncTracker();
   await win.loadURL(origin + '/widget');
 }
-app.on('before-quit', () => { closing = true; pointerDrag?.finish(); cancelTransition(); tracker?.kill(); globalShortcut.unregisterAll(); tray?.destroy();
+app.on('before-quit', event => {
+  if (!ownsInstance) return;
+  if (!shutdownComplete) { event.preventDefault(); void quitAll(); return; }
+  closing = true; pointerDrag?.finish(); cancelTransition(); tracker?.kill(); globalShortcut.unregisterAll(); tray?.destroy();
   try { writeFileSync(join(dataDir, 'widget-status.json'), JSON.stringify({ ...runtimeConfig.appInfo(), pid: process.pid, ready: false, exitReason: 'user-quit', updatedAt: Date.now() })); } catch {}
 });
 app.on('window-all-closed', () => app.quit());

@@ -14,6 +14,7 @@ import { acquireLease } from './lease.js';
 import { createApiRouter, json } from './http-routes.js';
 import { createStaticAssets } from './static-assets.js';
 import access from './access.cjs';
+import exitState from './exit-state.cjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const demo = process.argv.includes('--demo');
@@ -21,6 +22,8 @@ const port = Number(process.env.PORT || (demo ? 4318 : config.port));
 if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Invalid Continuer port');
 const origin = `http://127.0.0.1:${port}`;
 const dataDir = config.dataDir;
+if (process.argv.includes('--observe-only') && exitState.requested(dataDir, demo)) throw Error('Continuer 已退出，请先手动打开挂件。');
+if (!process.argv.includes('--observe-only')) exitState.clear(dataDir, demo);
 logging.installLogs(dataDir, demo ? 'demo' : 'service');
 logging.rotateLogs(dataDir);
 const releaseLease = await acquireLease(dataDir, demo ? 'demo-service' : 'service');

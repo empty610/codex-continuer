@@ -266,7 +266,7 @@ $('#compact-size').addEventListener('input',e => { void changeSize(e.target.valu
 $('#collapse').onclick=() => { void setExpanded(false); };
 if(bridge) {
   bridge.onState(applyDesktop); bridge.control('state').then(applyDesktop).catch(e=>toast(e.message));
-  $('#hide').onclick=()=>bridge.control('hide');
+  $('#quit').onclick=()=>bridge.control('quit');
   $('#reset-position').onclick=()=>bridge.control('reset-position').then(()=>toast('挂件位置已重置'));
 } else { document.body.classList.add('browser'); setSize(Number(localStorage.getItem('continuer-compact-size'))||256); }
 document.addEventListener('visibilitychange',syncView);

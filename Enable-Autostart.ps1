@@ -24,7 +24,7 @@ if (Test-Path -LiteralPath $continuerStatusPath) {
         $continuerSaved = Get-Content -LiteralPath $continuerStatusPath -Raw | ConvertFrom-Json
         $continuerProcess = Get-CimInstance Win32_Process -Filter "ProcessId=$([int]$continuerSaved.pid)"
         $continuerLegacy = $continuerProcess -and $continuerProcess.Name -eq 'powershell.exe' -and $continuerProcess.CommandLine.Contains((Join-Path $continuerSaved.pluginRoot 'desktop/watch-codex.ps1'))
-        $continuerNative = $continuerProcess -and $continuerProcess.Name -eq 'continuer-monitor.exe' -and $continuerProcess.ExecutablePath -eq (Join-Path $continuerSaved.pluginRoot 'desktop/continuer-monitor.exe') -and $continuerProcess.CommandLine -match '\s--watch\s'
+        $continuerNative = $continuerProcess -and $continuerProcess.Name -eq 'continuer-monitor.exe' -and $continuerProcess.ExecutablePath -eq (Join-Path $continuerSaved.pluginRoot 'desktop/continuer-monitor.exe') -and $continuerProcess.CommandLine -match '(?:^|\s)"?--watch"?(?:\s|$)'
         if ($continuerLegacy -or $continuerNative) { Stop-Process -Id $continuerProcess.ProcessId }
     } catch { Write-Warning 'Could not stop the previous watcher. Its single-instance lock prevents duplicate watchers.' }
 }

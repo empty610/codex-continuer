@@ -3,6 +3,7 @@ const demo = process.argv.includes('--demo');
 process.env.CONTINUER_PORT = process.env.PORT || (demo ? '4318' : process.env.CONTINUER_PORT || '4317');
 process.env.CONTINUER_DEMO = demo ? '1' : '';
 const runtime = await import('./runtime.js');
+const { default: exitState } = await import('../server/exit-state.cjs');
 try {
   if (process.argv[2] === 'stop') {
     let state;
@@ -13,6 +14,7 @@ try {
     if (state.app !== 'codex-continuer' || typeof state.diagnostics?.dataDir !== 'string' || normalize(state.diagnostics.dataDir) !== normalize(runtime.dataDir)) throw Error('端口服务不属于当前 Continuer 数据目录');
     await runtime.request('/api/shutdown', {}); console.log('Continuer stopped.');
   } else if (process.argv[2] === 'url') {
+    exitState.clear(runtime.dataDir, demo);
     await runtime.ensureService();
     process.stdout.write(runtime.origin + '/#access=' + runtime.readAccessToken());
   } else throw Error('Usage: node plugin/control.js url|stop [--demo]');

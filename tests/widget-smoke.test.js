@@ -53,9 +53,11 @@ for (const expanded of [false, true]) test(`hidden isolated widget is ready with
     assert.equal(requests.includes('/api/threads'), false, 'Hidden widgets should not load session lists');
     assert.equal(requests.includes('/rhine-signal-loop.svg'), false, 'Hidden widgets should not load the animation');
     spawn(executable, ['--disable-gpu', 'desktop/main.cjs', '--quit'], { env, windowsHide: true, stdio: 'ignore' }).unref();
-    await Promise.race([exited, delay(3000).then(() => { throw Error('Isolated widget did not quit'); })]);
+    await Promise.race([exited, delay(10000).then(() => { throw Error('Isolated widget did not quit'); })]);
     const stopped = JSON.parse(readFileSync(join(directory, 'widget-status.json'), 'utf8'));
     assert.equal(stopped.ready, false); assert.equal(stopped.exitReason, 'user-quit');
+    if (server.exitCode === null) await Promise.race([once(server, 'exit'), delay(3000).then(() => { if (server.exitCode === null) throw Error('Widget exit left its service running'); })]);
+    assert.notEqual(server.exitCode, null); assert.equal(existsSync(join(directory, 'quit-demo.request')), true);
   } finally {
     if (widget && widget.exitCode === null) widget.kill();
     const exited = server.exitCode === null ? once(server, 'exit') : Promise.resolve();

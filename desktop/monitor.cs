@@ -72,6 +72,7 @@ internal static class ContinuerMonitor {
                 string seen = "";
                 DateTime retryAt = DateTime.MinValue;
                 while (true) {
+                    if (File.Exists(Path.Combine(data, "quit.request"))) { Status(data, root, "stopped", "Continuer exited by user"); return; }
                     try {
                         string key = ContinuerWindows.DesktopKey();
                         if (key.Length == 0) {

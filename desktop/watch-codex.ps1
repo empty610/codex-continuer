@@ -22,6 +22,7 @@ try {
     Add-Type -Path (Join-Path $PSScriptRoot 'codex-windows.cs')
     Write-ContinuerStartupStatus 'watching' 'Waiting for Codex desktop'
     while ($true) {
+        if (Test-Path -LiteralPath (Join-Path $DataDir 'quit.request')) { Write-ContinuerStartupStatus 'stopped' 'Continuer exited by user'; break }
         try {
             # Inspect only native desktop windows, not every Electron child.
             $continuerKey = [ContinuerWindows]::DesktopKey()

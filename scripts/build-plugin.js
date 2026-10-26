@@ -46,7 +46,7 @@ cpSync(join(root, 'docs/portable.md'), join(dest, 'docs/portable.md'));
 cpSync(join(root, 'docs/portable.md'), join(dest, 'README.md'));
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 writeFileSync(join(dest, 'package.json'), JSON.stringify({ name: pkg.name, version: pkg.version, license: pkg.license, private: true, type: 'module', engines: pkg.engines }, null, 2));
-writeFileSync(join(dest, 'runtime.json'), JSON.stringify(portableBuild ? { profile: 'portable' } : { profile: 'local', dataDir: join(root, 'data'), nodePath: process.execPath }, null, 2));
+writeFileSync(join(dest, 'runtime.json'), JSON.stringify(portableBuild ? { profile: 'portable' } : { profile: 'local', dataDir: resolve(process.env.CONTINUER_BUILD_DATA_DIR || join(root, 'data')), nodePath: process.execPath }, null, 2));
 mkdirSync(join(dest, 'node_modules/electron'), { recursive: true });
 cpSync(join(root, 'node_modules/electron/dist'), join(dest, 'node_modules/electron/dist'), { recursive: true });
 // Codex CLI 0.153.x also accepts the legacy plugin layout.

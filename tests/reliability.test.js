@@ -202,11 +202,12 @@ test('portable configuration uses stable user data even when a legacy data folde
   env.CONTINUER_DATA_DIR = join(directory, 'explicit-data'); assert.equal(run(), env.CONTINUER_DATA_DIR);
 });
 
-test('runtime refuses an incompatible running build before attempting to launch anything', () => {
+test('runtime refuses an incompatible running build before attempting to launch anything', t => {
+  const env = { ...process.env, CONTINUER_DATA_DIR: temporary(t) };
   const script = `globalThis.fetch=async()=>({ok:true,json:async()=>({app:'codex-continuer',version:'0.3.3',protocolVersion:1,buildId:'obsolete'})}); const runtime=await import(${JSON.stringify(new URL('../plugin/runtime.js', import.meta.url).href)}); try{await runtime.ensureService();process.exitCode=1;}catch(error){console.log(error.message);}`;
-  const output = execFileSync(process.execPath, ['--input-type=module', '--eval', script], { windowsHide: true, encoding: 'utf8' });
+  const output = execFileSync(process.execPath, ['--input-type=module', '--eval', script], { env, windowsHide: true, encoding: 'utf8' });
   assert.match(output, /构建不一致/);
   const configUrl = JSON.stringify(new URL('../server/config.cjs', import.meta.url).href);
   const wrongDirectory = `const config=(await import(${configUrl})).default; globalThis.fetch=async()=>({ok:true,json:async()=>({...config.appInfo(),diagnostics:{dataDir:'wrong-directory'}})}); const runtime=await import(${JSON.stringify(new URL('../plugin/runtime.js', import.meta.url).href)}); try{await runtime.ensureService();process.exitCode=1;}catch(error){console.log(error.message);}`;
-  assert.match(execFileSync(process.execPath, ['--input-type=module', '--eval', wrongDirectory], { windowsHide: true, encoding: 'utf8' }), /不同的数据目录/);
+  assert.match(execFileSync(process.execPath, ['--input-type=module', '--eval', wrongDirectory], { env, windowsHide: true, encoding: 'utf8' }), /不同的数据目录/);
 });

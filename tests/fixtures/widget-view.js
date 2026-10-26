@@ -8,8 +8,9 @@ import { taskMode, wakeExplanation } from '../../public/task-mode.js';
 import { quotaWindow, resetCountdown } from '../../public/quota-display.js';
 import { pixelText } from '../../public/rhine-readout.js';
 
-export function widgetView() {
-  const elements = new Map(), requests = [], sources = [], intervals = new Map();
+export function widgetView({ reducedMotion = true } = {}) {
+  const elements = new Map(), requests = [], sources = [], intervals = new Map(), timeouts = new Map();
+  let now = Date.now();
   let serial = 0, desktopListener;
   const classes = initial => { const values = new Set(initial); return { contains: key => values.has(key), add: key => values.add(key), remove: key => values.delete(key), toggle(key, on = !values.has(key)) { on ? values.add(key) : values.delete(key); } }; };
   const element = selector => {
@@ -24,15 +25,29 @@ export function widgetView() {
   const bridge = { onState: callback => { desktopListener = callback; }, async control(action) { if (action === 'renderer-ready') desktop.visible = true; return { ...desktop }; } };
   class Feed extends VisibleFeed { constructor(options) { super({ ...options, create: () => { const source = { close() { this.closed = true; } }; sources.push(source); return source; } }); } }
   const document = { hidden: false, activeElement: null, body: { classList: classes(['collapsed']) }, documentElement: { style: { setProperty() {} } }, querySelector: element, importNode: value => value, addEventListener() {} };
-  const context = { document, window: { continuerDesktop: bridge, matchMedia: () => ({ matches: true }), addEventListener() {} }, localStorage: { getItem: () => null, setItem() {} },
-    TaskDetails, ApprovalDetails, VisibleFeed: Feed, LazyResource, setHtml, storageNotice, taskMode, wakeExplanation, quotaWindow, resetCountdown, pixelText, accessHeaders: () => ({}),
+  class ViewDate extends Date { constructor(...args) { super(...(args.length ? args : [now])); } static now() { return now; } }
+  const context = { document, window: { continuerDesktop: bridge, matchMedia: () => ({ matches: reducedMotion }), addEventListener() {} }, localStorage: { getItem: () => null, setItem() {} }, Date: ViewDate,
+    TaskDetails, ApprovalDetails, VisibleFeed: Feed, LazyResource, setHtml, storageNotice, taskMode, wakeExplanation,
+    quotaWindow: (state, slot, connected) => quotaWindow(state, slot, connected, now), resetCountdown: value => resetCountdown(value, now), pixelText, accessHeaders: () => ({}),
     AbortSignal, getComputedStyle: () => ({ opacity: '1' }), DOMParser: class { parseFromString() { return { querySelector: () => null, documentElement: {} }; } },
-    setInterval(callback, period) { const id = ++serial; intervals.set(id, { callback, period }); return id; }, clearInterval: id => intervals.delete(id), setTimeout: () => ++serial, clearTimeout() {},
+    setInterval(callback, period) { const id = ++serial; intervals.set(id, { callback, period, at: now + period }); return id; }, clearInterval: id => intervals.delete(id),
+    setTimeout(callback, period) { const id = ++serial; timeouts.set(id, { callback, at: now + period }); return id; }, clearTimeout: id => timeouts.delete(id),
     async fetch(path) { requests.push(path); return { ok: true, json: async () => ({ data: [], nextCursor: null }), text: async () => '<svg/>' }; },
   };
   const source = readFileSync(new URL('../../public/widget.js', import.meta.url), 'utf8').replace(/^import .*\n/gm, '');
   runInNewContext(source, context);
-  return { requests, sources, intervals, element,
+  return { requests, sources, intervals, timeouts, element, now: () => now,
+    advance(duration) {
+      const end = now + duration;
+      while (true) {
+        const next = [...intervals, ...timeouts].filter(([, timer]) => timer.at <= end).sort((a, b) => a[1].at - b[1].at || a[0] - b[0])[0];
+        if (!next) break;
+        const [id, timer] = next; now = timer.at;
+        if (intervals.has(id)) timer.at += timer.period; else timeouts.delete(id);
+        timer.callback();
+      }
+      now = end;
+    },
     desktop(change) { Object.assign(desktop, change); desktopListener({ ...desktop }); },
     message(index, state) { sources[index].onmessage({ data: JSON.stringify(state) }); },
     flush: () => new Promise(resolve => setImmediate(resolve)),

@@ -4,7 +4,9 @@
 
 监测 Codex 账户额度，在额度恢复后接续指定工作，并通过跟随 Codex 窗口的桌面挂件查看状态。
 
-**当前版本：0.4.0-preview.1 · Windows x64 预览版 · GPL-3.0-only。** 这是独立社区项目，与 OpenAI、Rhine、Clash Verge 无隶属关系。
+**开发版本：0.4.1-preview · Windows x64 预览版 · GPL-3.0-only。** 这是独立社区项目，与 OpenAI、Rhine、Clash Verge 无隶属关系。
+
+本对话后续更新统一记录在 `0.4.1-preview` / `preview/0.4.1`。现有安装版 `0.4.0-preview.1` 保留，预览改动不会自动安装或合并到 `main`。
 
 ## 功能
 
@@ -80,7 +82,7 @@ npm run doctor
 npm run build:release
 ```
 
-`doctor` 只检查版本和帮助信息，不调用模型或发送消息。测试使用独立数据与模拟 RPC/队列，并包含隐藏 Electron 窗口检查。本机已通过 232 项回归；托管 CI 状态以上方徽章和对应提交的工作流结果为准。
+`doctor` 只检查版本和帮助信息，不调用模型或发送消息。测试使用独立数据与模拟 RPC/队列，并包含隐藏 Electron 窗口检查。本机已通过 236 项回归；托管 CI 状态以上方徽章和对应提交的工作流结果为准。
 
 `build:release` 生成便携压缩包、同版本源码归档、`release.json` 和 `SHA256SUMS`。分发二进制时须配套提供源码归档。编译器可通过 `CONTINUER_CSC` 指定。
 

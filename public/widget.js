@@ -12,6 +12,7 @@ const bridge = window.continuerDesktop;
 const labels = { queued: '排队中', waiting: '等待额度', starting: '准备中', running: '进行中', pausing: '暂停中', paused: '已暂停', blocked: '需要关注', failed: '执行失败', completed: '已完成', approval: '等待授权' };
 const taskLabel=t=>t.status==="monitoring" ? "监测中" : t.waitReason==="desktop" ? "等待发送通道" : t.status==='waiting' && ['writer','thread'].includes(t.waitReason) ? '等待会话' : labels[t.status] || t.status;
 const busy = ["monitoring", 'queued', 'waiting', 'starting', 'running', 'approval', 'pausing'];
+const QUOTA_CYCLE_MS = 12000, QUOTA_TRANSITION_MS = 1000;
 const taskDetails = new TaskDetails(api, () => { if (viewVisible() && detailId && $('#modal').open) detail(detailId); }, error => toast(error.message));
 const approvalDetails = new ApprovalDetails(api, () => render());
 let desktopPreferenceError = null, rendererAnnounced = false, rendererReady = false;
@@ -51,11 +52,11 @@ function syncActivity() {
       clearTimeout(swapTimer); clearTimeout(refreshTimer);
       if(reducedMotion.matches) { windowSlot=windowSlot==='primary'?'secondary':'primary'; renderGauge(); return; }
       $('#mini').classList.remove('is-refreshing');
-      void $('#mini').offsetWidth;
       $('#mini').classList.add('is-refreshing');
-      swapTimer=setTimeout(() => { windowSlot=windowSlot==='primary'?'secondary':'primary'; renderGauge(); },240);
-      refreshTimer=setTimeout(() => $('#mini').classList.remove('is-refreshing'),480);
-    },5000);
+      // Change the quota, label and reset together at the opacity minimum.
+      swapTimer=setTimeout(() => { windowSlot=windowSlot==='primary'?'secondary':'primary'; renderGauge(); },QUOTA_TRANSITION_MS / 2);
+      refreshTimer=setTimeout(() => $('#mini').classList.remove('is-refreshing'),QUOTA_TRANSITION_MS);
+    },QUOTA_CYCLE_MS);
   } else if(!active && carouselTimer) {
     clearInterval(carouselTimer); clearTimeout(swapTimer); clearTimeout(refreshTimer); carouselTimer=null;
     $('#mini').classList.remove('is-refreshing');

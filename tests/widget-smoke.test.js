@@ -50,6 +50,7 @@ for (const expanded of [false, true]) test(`hidden isolated widget is ready with
     for (let i = 0; clients && i < 25; i++) { await delay(50); clients = (await (await authenticatedFetch(`https://127.0.0.1:${port}/api/health`)).json()).resources.sseClients; }
     assert.equal(clients, 0, 'Hidden widget must release its bootstrap stream');
     const requests = readFileSync(trace, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    assert.ok(requests.includes('/api/health'), 'The trace must record the known health route');
     assert.equal(requests.includes('/api/threads'), false, 'Hidden widgets should not load session lists');
     assert.equal(requests.includes('/rhine-signal-loop.svg'), false, 'Hidden widgets should not load the animation');
     spawn(executable, ['--disable-gpu', 'desktop/main.cjs', '--quit'], { env, windowsHide: true, stdio: 'ignore' }).unref();

@@ -9,8 +9,9 @@ import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { dispatch } from '../plugin/tools.js';
 import access from '../server/access.cjs';
+import { pinnedFetch } from './fixtures/local-fetch.js';
 
-test('HTTP and MCP imports share one reservation and persist one recovery delivery', { timeout: 20000 }, async () => {
+test('HTTP and MCP imports share one reservation and persist one recovery delivery', { timeout: 30000 }, async () => {
   const temporaryRoot = realpathSync(tmpdir());
   const dataDir = mkdtempSync(join(temporaryRoot, 'continuer-import-http-'));
   const portProbe = createServer();
@@ -34,7 +35,7 @@ test('HTTP and MCP imports share one reservation and persist one recovery delive
   });
   const exited = once(child, 'exit');
   let stderr = ''; child.stderr.on('data', data => { stderr += data; });
-  const origin = `http://127.0.0.1:${port}`;
+  const origin = `https://127.0.0.1:${port}`, fetch = pinnedFetch(dataDir, true);
   async function request(path, body) {
     const response = await fetch(origin + path, {
       signal: AbortSignal.timeout(3000), headers: { Authorization: 'Bearer ' + access.readToken(dataDir, true) },
@@ -45,12 +46,14 @@ test('HTTP and MCP imports share one reservation and persist one recovery delive
     return result;
   }
   try {
-    let ready = false;
-    for (let i = 0; i < 100; i++) {
+    let ready = false, startupError;
+    // A cold Windows TLS identity can take longer under concurrent CI load.
+    const startupDeadline = Date.now() + 20000;
+    while (Date.now() < startupDeadline) {
       if (child.exitCode !== null) throw Error(`Demo server exited: ${stderr}`);
-      try { await request('/api/state'); ready = true; break; } catch { await delay(50); }
+      try { await request('/api/state'); ready = true; break; } catch (error) { startupError = error; await delay(50); }
     }
-    assert.equal(ready, true, stderr);
+    assert.equal(ready, true, stderr || startupError?.message);
     const threadId = '11111111-1111-4111-8111-111111111111';
     const input = { threadId, prompt: 'Isolated import regression' };
     const runtime = { ensureService: async () => {}, request };
@@ -70,7 +73,7 @@ test('HTTP and MCP imports share one reservation and persist one recovery delive
     assert.equal(persisted[0].wake.delivery, 'sent');
     // The real HTTP routes share the tighter limits and mode-specific schema.
     await assert.rejects(request('/api/settings', { pollSeconds: 91 }), /90/);
-    await dispatch('continuer_update_settings', { pollSeconds: 90, maxWakeSends: 1 }, runtime);
+    await request('/api/settings', { pollSeconds: 90, maxWakeSends: 1 });
     const capped = (await request('/api/state')).tasks.find(task => task.id === imported[0].id);
     assert.equal(capped.status, 'paused'); assert.equal(capped.continuous, false);
     await assert.rejects(request(`/api/tasks/${capped.id}`, { action: 'resume' }), /上限/);

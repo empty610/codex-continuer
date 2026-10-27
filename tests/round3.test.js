@@ -103,6 +103,48 @@ for (const command of ['x'.repeat(12001), { hidden: 'not a reviewable command' }
   assert.equal(task.status, 'pausing'); assert.equal(f.rpc.calls.some(call => call.method === 'turn/interrupt'), true);
 });
 
+test('file-change approvals fail closed without presenting a misleading allow button', async t => {
+  const f = fixture(t), task = f.manager.create(input); await f.manager.tick();
+  f.manager.request({ id: 55, method: 'item/fileChange/requestApproval', params: { threadId: task.threadId, turnId: task.turnId, itemId: 'change', reason: 'fixture reason', grantRoot: 'E:\\outside' } });
+  assert.equal(f.manager.approvals.size, 0); assert.equal(f.rpc.sent[0].error.code, -32601);
+  assert.equal(task.status, 'pausing'); assert.match(task.activity, /文件修改范围/);
+  assert.equal(f.rpc.calls.some(call => call.method === 'turn/interrupt'), true);
+  assert.throws(() => f.manager.approve(55, 'accept', 'guess'), /过期/);
+});
+
+test('commands without visible text or with undisplayed permission fields are rejected', async t => {
+  for (const extras of [{ command: '' }, { command: ' ' }, { command: null }, ...[
+    { additionalPermissions: { network: true } }, { proposedExecpolicyAmendment: ['all'] }, { proposedNetworkPolicyAmendments: [] },
+    { environmentId: 'remote' }, { networkApprovalContext: {} }, { availableDecisions: ['acceptForSession'] }, { kind: 'stdin' }, { kind: null }, { unknownScope: null },
+  ].map(scope => ({ command: 'fixture', ...scope }))]) {
+    const f = fixture(t), task = f.manager.create(input); await f.manager.tick();
+    f.manager.request({ id: 56, method: 'item/commandExecution/requestApproval', params: { threadId: task.threadId, turnId: task.turnId, ...extras } });
+    assert.equal(f.manager.approvals.size, 0); assert.equal(f.rpc.sent[0].error.code, -32601);
+  }
+});
+
+test('baseline command approvals preserve null optional scopes and review metadata', async t => {
+  const f = fixture(t), task = f.manager.create(input); await f.manager.tick();
+  f.manager.request({ id: 58, method: 'item/commandExecution/requestApproval', params: {
+    threadId: task.threadId, turnId: task.turnId, itemId: 'command', approvalId: null,
+    command: 'echo fixture', cwd: input.cwd, reason: null, commandActions: null, kind: 'command', startedAtMs: 1000,
+    additionalPermissions: null, availableDecisions: null, environmentId: null, networkApprovalContext: null,
+    proposedExecpolicyAmendment: null, proposedNetworkPolicyAmendments: null,
+  } });
+  const approval = f.manager.approvals.get('58'); assert.ok(approval);
+  assert.equal(approval.command, 'echo fixture'); assert.equal(approval.cwd, input.cwd);
+  f.manager.approve(58, 'accept', approval.detailToken);
+  assert.equal(f.rpc.sent.at(-1).result.decision, 'accept');
+});
+
+test('approve also rejects injected incomplete file-change records at its final boundary', async t => {
+  const f = fixture(t), task = f.manager.create(input); await f.manager.tick();
+  f.manager.approvals.set('57', { id: 57, detailToken: 'fixture', method: 'item/fileChange/requestApproval', taskId: task.id, threadId: task.threadId, turnId: task.turnId });
+  task.status = 'approval';
+  assert.throws(() => f.manager.approve(57, 'accept', 'fixture'), /完整审阅/);
+  assert.equal(f.rpc.sent.some(message => message.result?.decision === 'accept'), false);
+});
+
 test('a late interrupt failure cannot block a newer turn', async t => {
   const f = fixture(t), task = f.manager.create(input); await f.manager.tick(); const oldTurn = task.turnId, original = f.rpc.call, held = deferred();
   f.rpc.call = (method, params) => method === 'turn/interrupt' ? held.promise : original(method, params);
@@ -126,7 +168,8 @@ test('cold-start handshake refuses a matching build from another data directory'
   const code = `import cp from 'node:child_process';import {syncBuiltinESMExports} from 'node:module';import {EventEmitter} from 'node:events';
     cp.spawn=()=>Object.assign(new EventEmitter(),{unref(){}});syncBuiltinESMExports();
     const config=(await import(${JSON.stringify(config)})).default; let calls=0;
-    globalThis.fetch=async()=>{if(!calls++)throw Object.assign(new Error('not running'),{cause:{code:'ECONNREFUSED'}});return {ok:true,json:async()=>({...config.appInfo(),diagnostics:{dataDir:'wrong-directory'}})}};
+    const localTls=(await import(${JSON.stringify(new URL('../server/local-tls.cjs', import.meta.url).href)})).default;localTls.requestOptions=()=>({});
+    localTls.fetchLocal=async()=>{if(!calls++)throw Object.assign(new Error('not running'),{cause:{code:'ECONNREFUSED'}});return {ok:true,json:async()=>({...config.appInfo(),diagnostics:{dataDir:'wrong-directory'}})}};
     try {await (await import(${JSON.stringify(runtime)})).ensureService();console.log(JSON.stringify({accepted:true}));}catch(error){console.log(JSON.stringify({accepted:false,error:error.message}));}`;
   const result = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '--eval', code], { windowsHide: true, env: { ...process.env, CONTINUER_DATA_DIR: directory }, encoding: 'utf8', timeout: 12000 }));
   assert.equal(result.accepted, false); assert.match(result.error, /不同的数据目录/);

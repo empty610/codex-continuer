@@ -55,5 +55,8 @@ console.log('widget opened');console.error('diagnostic stderr');`);
     await delay(2100);assert.equal(launches(),2);
     const output=execFileSync(exe,['--track','123'],{encoding:'utf8',windowsHide:true});
     assert.deepEqual(JSON.parse(output),{pid:123});
-  } finally { child.kill();await once(child,'exit'); }
+    const exited=once(child,'exit');writeFileSync(join(data,'quit.request'),'User exit');await exited;
+    assert.equal(status().state,'stopped');
+    const stopped=spawn(exe,args,{env,windowsHide:true,stdio:'ignore'});assert.equal((await once(stopped,'exit'))[0],0);assert.equal(launches(),2);
+  } finally { if(child.exitCode===null){child.kill();await once(child,'exit');} }
 });

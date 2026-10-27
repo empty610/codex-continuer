@@ -93,3 +93,44 @@ test('widget loads only its current view, stops idle work while hidden and resto
   assert.equal(f.requests.filter(path => path === '/rhine-signal-loop.svg').length, 1);
   f.desktop({ visible: false }); assert.equal(f.intervals.size, 0);
 });
+
+async function quotaView(reducedMotion = false) {
+  const view = widgetView({ reducedMotion }); await view.flush();
+  const now = view.now();
+  const sample = { connection: { status: 'connected' }, settings: { enabled: false }, sampledAt: now, quota: { rateLimits: {
+    primary: { usedPercent: 23, windowDurationMins: 300, resetsAt: now / 1000 + 3600 },
+    secondary: { usedPercent: 61, windowDurationMins: 10080, resetsAt: now / 1000 + 7200 },
+  } }, tasks: [], approvals: [], logs: [] };
+  view.message(0, sample); await view.flush(); return view;
+}
+
+test('quota carousel dwells for twelve seconds and switches all values at the fade midpoint', async () => {
+  const view = await quotaView(), mini = view.element('#mini');
+  assert.equal(view.element('#mini-quota').textContent, '77');
+  view.advance(11999); assert.equal(mini.classList.contains('is-refreshing'), false);
+  view.advance(1); assert.equal(mini.classList.contains('is-refreshing'), true);
+  view.advance(499); assert.equal(view.element('#mini-window').textContent, '五小时可用额度');
+  view.advance(1); assert.equal(view.element('#mini-quota').textContent, '39'); assert.equal(view.element('#mini-window').textContent, '七天可用额度');
+  assert.equal(view.element('#mini-reset').textContent, '01:59:48');
+  view.advance(500); assert.equal(mini.classList.contains('is-refreshing'), false);
+  view.advance(11000); assert.equal(mini.classList.contains('is-refreshing'), true);
+  view.advance(500); assert.equal(view.element('#mini-quota').textContent, '77'); assert.equal(view.element('#mini-window').textContent, '五小时可用额度');
+  assert.equal(view.requests.filter(path => path === '/rhine-signal-loop.svg').length, 1);
+});
+
+test('hiding or expanding during a quota fade cancels the pending swap and animation timers', async () => {
+  const view = await quotaView(), mini = view.element('#mini');
+  view.advance(12250); assert.equal(mini.classList.contains('is-refreshing'), true);
+  view.desktop({ visible: false }); assert.equal(view.intervals.size, 0); assert.equal(view.timeouts.size, 0); assert.equal(mini.classList.contains('is-refreshing'), false);
+  view.advance(2000); assert.equal(view.element('#mini-quota').textContent, '77');
+  view.desktop({ visible: true }); view.advance(12250);
+  view.desktop({ expanded: true }); assert.equal(mini.classList.contains('is-refreshing'), false); assert.equal(view.timeouts.size, 0);
+});
+
+test('reduced motion retains the longer dwell and switches without fade timers', async () => {
+  const view = await quotaView(true);
+  view.advance(11999); assert.equal(view.element('#mini-quota').textContent, '77');
+  view.advance(1); assert.equal(view.element('#mini-quota').textContent, '39');
+  assert.equal(view.element('#mini').classList.contains('is-refreshing'), false); assert.equal(view.timeouts.size, 0);
+  view.advance(12000); assert.equal(view.element('#mini-quota').textContent, '77');
+});

@@ -81,7 +81,7 @@ test('approval and outbox side effects cannot cross a failed durable save', () =
   const { m, rpc } = manager({ load: () => null, save: () => { if (fail) throw Error('disk fixture'); } });
   const task = m.create({ name: 'Fixture', cwd: 'E:\\fixture', prompt: 'Goal' });
   Object.assign(task, { status: 'approval', threadId: 'thread', turnId: 'turn' });
-  m.approvals.set('1', { id: 1, detailToken: 'fixture', taskId: task.id, threadId: task.threadId, turnId: task.turnId }); fail = true;
+  m.approvals.set('1', { id: 1, detailToken: 'fixture', taskId: task.id, threadId: task.threadId, turnId: task.turnId, method: 'item/commandExecution/requestApproval', command: 'echo fixture' }); fail = true;
   assert.throws(() => m.approve(1, 'accept', 'fixture'), /disk fixture/); assert.deepEqual(rpc.sent, []);
   fail = false; m.recoverStorage('retry'); m.stop();
 });
@@ -202,11 +202,13 @@ test('portable configuration uses stable user data even when a legacy data folde
   env.CONTINUER_DATA_DIR = join(directory, 'explicit-data'); assert.equal(run(), env.CONTINUER_DATA_DIR);
 });
 
-test('runtime refuses an incompatible running build before attempting to launch anything', () => {
-  const script = `globalThis.fetch=async()=>({ok:true,json:async()=>({app:'codex-continuer',version:'0.3.3',protocolVersion:1,buildId:'obsolete'})}); const runtime=await import(${JSON.stringify(new URL('../plugin/runtime.js', import.meta.url).href)}); try{await runtime.ensureService();process.exitCode=1;}catch(error){console.log(error.message);}`;
-  const output = execFileSync(process.execPath, ['--input-type=module', '--eval', script], { windowsHide: true, encoding: 'utf8' });
+test('runtime refuses an incompatible running build before attempting to launch anything', t => {
+  const env = { ...process.env, CONTINUER_DATA_DIR: temporary(t) };
+  const transport = `const localTls=(await import(${JSON.stringify(new URL('../server/local-tls.cjs', import.meta.url).href)})).default;localTls.requestOptions=()=>({});`;
+  const script = transport + `localTls.fetchLocal=async()=>({ok:true,json:async()=>({app:'codex-continuer',version:'0.3.3',protocolVersion:1,buildId:'obsolete'})}); const runtime=await import(${JSON.stringify(new URL('../plugin/runtime.js', import.meta.url).href)}); try{await runtime.ensureService();process.exitCode=1;}catch(error){console.log(error.message);}`;
+  const output = execFileSync(process.execPath, ['--input-type=module', '--eval', script], { env, windowsHide: true, encoding: 'utf8' });
   assert.match(output, /构建不一致/);
   const configUrl = JSON.stringify(new URL('../server/config.cjs', import.meta.url).href);
-  const wrongDirectory = `const config=(await import(${configUrl})).default; globalThis.fetch=async()=>({ok:true,json:async()=>({...config.appInfo(),diagnostics:{dataDir:'wrong-directory'}})}); const runtime=await import(${JSON.stringify(new URL('../plugin/runtime.js', import.meta.url).href)}); try{await runtime.ensureService();process.exitCode=1;}catch(error){console.log(error.message);}`;
-  assert.match(execFileSync(process.execPath, ['--input-type=module', '--eval', wrongDirectory], { windowsHide: true, encoding: 'utf8' }), /不同的数据目录/);
+  const wrongDirectory = transport + `const config=(await import(${configUrl})).default; localTls.fetchLocal=async()=>({ok:true,json:async()=>({...config.appInfo(),diagnostics:{dataDir:'wrong-directory'}})}); const runtime=await import(${JSON.stringify(new URL('../plugin/runtime.js', import.meta.url).href)}); try{await runtime.ensureService();process.exitCode=1;}catch(error){console.log(error.message);}`;
+  assert.match(execFileSync(process.execPath, ['--input-type=module', '--eval', wrongDirectory], { env, windowsHide: true, encoding: 'utf8' }), /不同的数据目录/);
 });

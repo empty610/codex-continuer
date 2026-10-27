@@ -18,17 +18,18 @@ function fixture(saved, send) {
   return { m, rpc, saves, sent, cycle };
 }
 
-test('backend and MCP accept 90 seconds and atomically reject larger or invalid policies', () => {
+test('backend accepts 90 seconds while MCP cannot change execution policies', () => {
   const { m } = fixture();
   m.updateSettings({ pollSeconds: 90, maxWakeSends: 1 });
-  validate('continuer_update_settings', { pollSeconds: 90, maxWakeSends: 1 });
+  assert.throws(() => validate('continuer_update_settings', { pollSeconds: 90, maxWakeSends: 1 }));
   const before = structuredClone(m.state.settings);
   for (const input of [{ pollSeconds: 91 }, { pollSeconds: 300 }, { pollSeconds: 9 }, { pollSeconds: 90.1 }, { maxWakeSends: 0 }, { maxWakeSends: 101 }]) {
     assert.throws(() => m.updateSettings({ enabled: false, ...input }));
     assert.throws(() => validate('continuer_update_settings', input));
     assert.deepEqual(m.state.settings, before);
   }
-  assert.equal(tools.find(t => t.name === 'continuer_update_settings').inputSchema.properties.pollSeconds.maximum, MAX_POLL_SECONDS);
+  assert.equal(MAX_POLL_SECONDS, 90);
+  assert.deepEqual(Object.keys(tools.find(t => t.name === 'continuer_update_settings').inputSchema.properties), ['enabled']);
 });
 
 test('legacy polling values shrink to 90 and migration is saved without enabling scheduling', () => {

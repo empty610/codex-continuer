@@ -1,4 +1,5 @@
 import { readJsonBody } from './http-body.js';
+import { ClientError } from './http-policy.js';
 
 export function json(res, code, data) {
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -13,7 +14,7 @@ export function createApiRouter({ manager, health, stream, rpc, demo, summary, s
     ['/api/storage/recover', input => manager.recoverStorage(input.source)],
     ['/api/tasks', input => manager.create(input)],
     ['/api/import', input => {
-      if (input.note !== undefined && input.prompt !== undefined) throw new Error('请仅提供监测备注 note；prompt 为旧版兼容字段');
+      if (input.note !== undefined && input.prompt !== undefined) throw new ClientError('请仅提供监测备注 note；prompt 为旧版兼容字段');
       return manager.importThread(input.threadId, input.note ?? input.prompt);
     }],
     ['/api/approval', input => manager.approve(input.id, input.decision, input.token)],
@@ -26,11 +27,7 @@ export function createApiRouter({ manager, health, stream, rpc, demo, summary, s
       if (path === '/api/state') json(res, 200, summary());
       else if (path === '/api/health') json(res, 200, health.snapshot());
       else if (path === '/api/logs') json(res, 200, { logs: manager.state.logs });
-      else if (/^\/api\/approvals\/[^/]+$/.test(path)) {
-        const approval = manager.approvals.get(decodeURIComponent(path.split('/').pop()));
-        if (approval && approval.detailToken === url.searchParams.get('token')) json(res, 200, { approval });
-        else json(res, 404, { error: '授权请求已失效' });
-      } else if (/^\/api\/tasks\/[^/]+$/.test(path)) {
+      else if (/^\/api\/tasks\/[^/]+$/.test(path)) {
         const task = manager.taskSnapshot(decodeURIComponent(path.split('/').pop()));
         json(res, task ? 200 : 404, task ? { task } : { error: '任务不存在' });
       } else if (path === '/api/events') {
@@ -40,6 +37,12 @@ export function createApiRouter({ manager, health, stream, rpc, demo, summary, s
       return true;
     }
     if (req.method !== 'POST') return false;
+    if (/^\/api\/approvals\/[^/]+$/.test(path)) {
+      const input = await readJsonBody(req), approval = manager.approvals.get(decodeURIComponent(path.split('/').pop()));
+      if (typeof input.token === 'string' && approval && approval.detailToken === input.token) json(res, 200, { approval });
+      else json(res, 404, { error: '授权请求已失效' });
+      return true;
+    }
     const taskId = /^\/api\/tasks\/[^/]+$/.test(path) ? decodeURIComponent(path.split('/').pop()) : null;
     const mutation = mutations.get(path) || (taskId !== null ? input => manager.action(taskId, input.action, input.value) : null);
     if (!mutation && path !== '/api/shutdown') return false;

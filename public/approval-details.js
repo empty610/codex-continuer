@@ -11,7 +11,7 @@ export class ApprovalDetails {
       if (!slot || slot.token !== summary.detailToken) { slot = { token: summary.detailToken }; this.slots.set(id, slot); }
       if (!slot.value && !slot.pending && (!slot.retryAt || Date.now() >= slot.retryAt)) {
         slot.pending = true;
-        this.request(`/api/approvals/${encodeURIComponent(id)}?token=${encodeURIComponent(slot.token)}`).then(result => {
+        this.request(`/api/approvals/${encodeURIComponent(id)}`, { token: slot.token }).then(result => {
           if (this.slots.get(id) !== slot) return;
           if (result.approval.detailToken !== slot.token) throw new Error('授权请求已更新');
           slot.value = result.approval; slot.pending = false; this.changed();

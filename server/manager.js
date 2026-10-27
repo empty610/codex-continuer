@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
-import { statSync } from 'node:fs';
-import { isAbsolute } from 'node:path';
+import { ClientError } from './http-policy.js';
+import { checkedProjectPath, localProjectPath } from './project-path.js';
 import { quotaAvailable, isQuotaError, isWriterConflict, parseOutcome, progress, buckets, MAX_POLL_SECONDS } from './policy.js';
 import { resetWake, tickQuotaWake, enforceWakeLimit } from './quota-wake.js';
 import { OUTPUT_LIMIT, retainOutput, outcomeSummary } from './output.js';
@@ -145,13 +145,13 @@ export class Manager extends EventEmitter {
     this.emit('change'); this.emit('persistence-error', error);
   }
   activate() {
-    if (this.persistence.status !== 'ok') throw new Error('数据保存失败，恢复存储后再开启调度');
+    if (this.persistence.status !== 'ok') throw new ClientError('数据保存失败，恢复存储后再开启调度');
     this.observationOnly = false;
   }
   recoverStorage(source = 'retry') {
-    if (this.wakeExecutions.size) throw new Error('续作消息仍在发送，请等待发送结果确认后再恢复存储');
+    if (this.wakeExecutions.size) throw new ClientError('续作消息仍在发送，请等待发送结果确认后再恢复存储');
     if (source === 'backup') {
-      if (this.scheduling || this.executions.size || this.state.tasks.some(t => ['starting', ...ACTIVE_TURN_STATUSES].includes(t.status))) throw new Error('请先确认当前工作已停止，再恢复备份');
+      if (this.scheduling || this.executions.size || this.state.tasks.some(t => ['starting', ...ACTIVE_TURN_STATUSES].includes(t.status))) throw new ClientError('请先确认当前工作已停止，再恢复备份');
       this.scheduleEpoch++;
       this.state = this.store.restoreBackup(state => {
         state.settings.enabled = false;
@@ -164,11 +164,11 @@ export class Manager extends EventEmitter {
       this.approvals.clear(); this.persistence = { status: 'ok', message: null }; this.pendingSave = false;
       this.emit('change');
     } else if (source === 'retry') {
-      if (this.persistence.needsRestore) throw new Error('主状态文件损坏，请明确选择恢复备份');
+      if (this.persistence.needsRestore) throw new ClientError('主状态文件损坏，请明确选择恢复备份');
       this.scheduleEpoch++;
       for (const task of this.state.tasks) if (task.wake?.delivery === 'sending') { task.wake.delivery = 'uncertain'; task.status = 'blocked'; task.activity = '发送记录保存失败，请检查原聊天后手动继续'; }
       this.state.settings.enabled = false; this.pendingSave = true; this.flush(); this.emit('change');
-    } else throw new Error('恢复方式无效');
+    } else throw new ClientError('恢复方式无效');
   }
   clearCompletedTasks() {
     const completedIds = new Set(this.state.tasks.filter(t => t.status === 'completed').map(t => t.id));
@@ -287,6 +287,7 @@ export class Manager extends EventEmitter {
       task.status = 'queued'; task.activity = '启动已取消，等待有效调度和新鲜额度'; this.changed(); return false;
     };
     try {
+      task.cwd = localProjectPath(task.cwd);
       task.turnId = null;
       task.status = 'starting'; task.waitReason=null; task.activity = '正在恢复会话…'; this.changed();
       if (task.rounds >= this.state.settings.maxRounds) {
@@ -315,7 +316,7 @@ export class Manager extends EventEmitter {
         outputSchema: outcomeSchema,
       });
       if (!current()) return;
-      if (typeof result.turn?.id !== 'string' || !result.turn.id) throw new Error('未收到有效的轮次 ID，请检查原会话后手动继续');
+      if (typeof result.turn?.id !== 'string' || !result.turn.id) throw new ClientError('未收到有效的轮次 ID，请检查原会话后手动继续');
       execution.pending = false;
       if (ACTIVE_TURN_STATUSES.includes(task.status)) task.turnId = result.turn.id;
       this.log(`开始工作：${task.name}`, 'success', task.id);
@@ -477,12 +478,12 @@ export class Manager extends EventEmitter {
     }
   }
   approve(id, decision, token) {
-    if (this.persistence.status !== 'ok') throw new Error('请先恢复数据保存，再处理授权');
+    if (this.persistence.status !== 'ok') throw new ClientError('请先恢复数据保存，再处理授权');
     const request = this.approvals.get(String(id));
-    if (!request || typeof token !== 'string' || token !== request.detailToken || !['accept', 'decline'].includes(decision)) throw new Error('授权请求已过期或决定无效');
-    if (request.method !== 'item/commandExecution/requestApproval' || typeof request.command !== 'string' || !request.command.trim()) throw new Error('授权内容无法完整审阅，请在原 Codex 中处理');
+    if (!request || typeof token !== 'string' || token !== request.detailToken || !['accept', 'decline'].includes(decision)) throw new ClientError('授权请求已过期或决定无效');
+    if (request.method !== 'item/commandExecution/requestApproval' || typeof request.command !== 'string' || !request.command.trim()) throw new ClientError('授权内容无法完整审阅，请在原 Codex 中处理');
     const task = this.state.tasks.find(t => t.id === request.taskId);
-    if (this.stopped || !this.rpc.ready || !task || task.status !== 'approval' || !this.matchesTurn(task, request)) throw new Error('授权所属轮次已失效或正在暂停');
+    if (this.stopped || !this.rpc.ready || !task || task.status !== 'approval' || !this.matchesTurn(task, request)) throw new ClientError('授权所属轮次已失效或正在暂停');
     // Confirm storage before granting an operation permission.
     this.pendingSave = true; this.flush();
     this.rpc.send({ id: request.id, result: { decision } });
@@ -492,36 +493,36 @@ export class Manager extends EventEmitter {
     this.changed();
   }
   create(input) {
-    if (this.state.tasks.length >= 100) throw new Error('最多管理 100 条记录，请先结束不再需要的工作');
-    for (const key of ['name', 'cwd', 'prompt']) if (typeof input[key] !== 'string' || !input[key].trim()) throw new Error('请填写名称、项目目录和工作目标');
-    if (input.name.length > 120 || input.prompt.length > 12000) throw new Error('名称或目标过长');
-    if (!this.demo && (!isAbsolute(input.cwd) || !statSync(input.cwd).isDirectory())) throw new Error('项目目录必须是存在的绝对路径');
-    const task = { id: randomUUID(), name: input.name.trim(), cwd: input.cwd.trim(), prompt: input.prompt.trim(), threadId: null, continuous: input.continuous === true, status: 'queued', activity: '等待调度', rounds: 0, plan: [], output: '', createdAt: Date.now(), updatedAt: Date.now() };
+    if (this.state.tasks.length >= 100) throw new ClientError('最多管理 100 条记录，请先结束不再需要的工作');
+    for (const key of ['name', 'cwd', 'prompt']) if (typeof input[key] !== 'string' || !input[key].trim()) throw new ClientError('请填写名称、项目目录和工作目标');
+    if (input.name.length > 120 || input.prompt.length > 12000) throw new ClientError('名称或目标过长');
+    const cwd = checkedProjectPath(input.cwd, { demo: this.demo });
+    const task = { id: randomUUID(), name: input.name.trim(), cwd, prompt: input.prompt.trim(), threadId: null, continuous: input.continuous === true, status: 'queued', activity: '等待调度', rounds: 0, plan: [], output: '', createdAt: Date.now(), updatedAt: Date.now() };
     this.state.tasks.unshift(task); this.log(`添加工作：${task.name}`); this.changed(); this.activate(); return task;
   }
   async action(id, action, value) {
     const task = this.state.tasks.find(t => t.id === id);
-    if (!task) throw new Error('任务不存在');
+    if (!task) throw new ClientError('任务不存在');
     if (task.mode === 'quota-wake') {
       if ((this.wakeExecutions.has(task.id) || task.wake?.delivery === 'uncertain') && (action === 'pause' || (action === 'continuous' && value === false))) {
         task.continuous = false; task.status = 'paused'; task.waitReason = null; task.retryAt = 0;
         task.activity = '监测已暂停，发送结果仍需确认；请核对原聊天，已发出的消息无法撤回'; this.changed(); return;
       }
       if (this.wakeExecutions.has(task.id)) {
-        throw new Error('续作消息发送结果仍在确认，请等待后再开启或结束监测');
+        throw new ClientError('续作消息发送结果仍在确认，请等待后再开启或结束监测');
       }
-      if ((action === 'resume' || (action === 'continuous' && value === true)) && (task.sentCount || 0) >= this.state.settings.maxWakeSends) throw new Error('已达到原聊天发送次数上限，请提高发送上限后再开启监测；累计次数不会重置');
+      if ((action === 'resume' || (action === 'continuous' && value === true)) && (task.sentCount || 0) >= this.state.settings.maxWakeSends) throw new ClientError('已达到原聊天发送次数上限，请提高发送上限后再开启监测；累计次数不会重置');
       if (action === 'continuous') {
-        if (typeof value !== 'boolean') throw new Error('开关值无效');
+        if (typeof value !== 'boolean') throw new ClientError('开关值无效');
         if (task.continuous !== value) { task.continuous = value; resetWake(task); }
       } else if (action === 'pause') { task.continuous = false; resetWake(task); }
       else if (action === 'resume') { task.continuous = true; resetWake(task); }
       else if (action === 'complete') { task.continuous = false; task.status = 'completed'; this.log(`已结束监测：${task.name}；工作结果请在原聊天确认`, 'info', task.id); }
-      else throw new Error('不支持的操作');
+      else throw new ClientError('不支持的操作');
       this.changed(); if (action === 'resume' || (action === 'continuous' && value === true)) this.activate(); return;
     }
     if (action === 'continuous') {
-      if (typeof value !== 'boolean') throw new Error('开关值无效');
+      if (typeof value !== 'boolean') throw new ClientError('开关值无效');
       task.continuous = value;
       if (!value && ['waiting', 'queued'].includes(task.status)) { task.status = 'paused'; task.activity = '持续工作已关闭'; }
       if (value && task.status==='blocked' && isWriterConflict({message:task.activity})) this.waitForThread(task,'writer');
@@ -536,21 +537,21 @@ export class Manager extends EventEmitter {
       }
       return;
     } else if (action === 'resume') {
-      if (['starting', 'running', 'approval', 'pausing'].includes(task.status)) throw new Error('任务尚在运行或停止中');
+      if (['starting', 'running', 'approval', 'pausing'].includes(task.status)) throw new ClientError('任务尚在运行或停止中');
       task.status = 'queued'; task.rounds = 0; task.retryAt = 0; task.activity = '等待可用额度';
     } else if (action === 'complete') {
-      if (['starting', 'running', 'approval', 'pausing'].includes(task.status)) throw new Error('请先暂停任务');
+      if (['starting', 'running', 'approval', 'pausing'].includes(task.status)) throw new ClientError('请先暂停任务');
       task.status = 'completed'; task.activity = '用户确认完成';
-    } else throw new Error('不支持的操作');
+    } else throw new ClientError('不支持的操作');
     if (task.status!=='waiting') { task.waitReason=null; if (task.status==='paused') task.retryAt=0; }
     this.changed();
     if (action === 'resume' || (action === 'continuous' && value === true)) this.activate();
   }
   updateSettings(input) {
     const s = this.state.settings;
-    if (input.enabled !== undefined && typeof input.enabled !== 'boolean') throw new Error('开关值无效');
+    if (input.enabled !== undefined && typeof input.enabled !== 'boolean') throw new ClientError('开关值无效');
     for (const [key, min, max] of [['pollSeconds', 10, MAX_POLL_SECONDS], ['minimumRemaining', 1, 99], ['maxRounds', 1, 100], ['maxWakeSends', 1, 100]]) {
-      if (input[key] !== undefined) { if (!Number.isInteger(input[key]) || input[key] < min || input[key] > max) throw new Error(`${key} 必须为 ${min}–${max} 的整数`); }
+      if (input[key] !== undefined) { if (!Number.isInteger(input[key]) || input[key] < min || input[key] > max) throw new ClientError(`${key} 必须为 ${min}–${max} 的整数`); }
     }
     for (const key of ['pollSeconds', 'minimumRemaining', 'maxRounds', 'maxWakeSends']) if (input[key] !== undefined) s[key] = input[key];
     if (input.enabled !== undefined) s.enabled = input.enabled;
@@ -561,17 +562,17 @@ export class Manager extends EventEmitter {
   }
   async listThreads(cursor = null) { await this.rpc.connect?.(); return this.rpc.call('thread/list', { limit: 30, sortKey: 'updated_at', cursor }); }
   async importThread(id, note = '') {
-    if (this.state.tasks.some(t => t.threadId === id)) throw new Error('该会话已添加');
-    if (this.importingThreads.has(id)) throw new Error('该会话正在添加，请勿重复导入');
-    if (this.state.tasks.length >= 100) throw new Error('最多管理 100 条记录，请先结束不再需要的工作');
-    if (typeof note !== 'string' || note.length > 12000) throw new Error('监测备注必须为不超过 12000 字符的文本');
+    if (this.state.tasks.some(t => t.threadId === id)) throw new ClientError('该会话已添加');
+    if (this.importingThreads.has(id)) throw new ClientError('该会话正在添加，请勿重复导入');
+    if (this.state.tasks.length >= 100) throw new ClientError('最多管理 100 条记录，请先结束不再需要的工作');
+    if (typeof note !== 'string' || note.length > 12000) throw new ClientError('监测备注必须为不超过 12000 字符的文本');
     // Reserve before yielding: HTTP and MCP imports share this manager.
     this.importingThreads.add(id);
     try {
       const { thread } = await this.rpc.call('thread/read', { threadId: id, includeTurns: false });
       // Another task path may have claimed the thread while the read was pending.
-      if (this.state.tasks.some(t => t.threadId === id)) throw new Error('该会话已添加');
-      if (this.state.tasks.length >= 100) throw new Error('最多管理 100 条记录，请先结束不再需要的工作');
+      if (this.state.tasks.some(t => t.threadId === id)) throw new ClientError('该会话已添加');
+      if (this.state.tasks.length >= 100) throw new ClientError('最多管理 100 条记录，请先结束不再需要的工作');
       const task = { id: randomUUID(), mode: 'quota-wake', threadId: id, name: (thread.name || thread.preview || 'Codex 会话').slice(0, 80), cwd: thread.cwd, note: note.trim(), continuous: false, status: 'paused', activity: '会话已添加，开启额度监测后在恢复时发送“继续”；工作结果请在原聊天确认', sentCount: 0, wake: { armed: false, delivery: 'idle' }, plan: [], output: '', createdAt: Date.now(), updatedAt: Date.now() };
       this.state.tasks.unshift(task); this.log(`已添加会话：${task.name}`); this.changed(); return task;
     } finally { this.importingThreads.delete(id); }

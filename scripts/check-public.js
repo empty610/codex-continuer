@@ -6,6 +6,7 @@ import { publicFiles } from './source-files.js';
 export function checkPublic(root = '.') {
   const failures = [], files = publicFiles(root);
   const patterns = [
+    ['local Bearer credential', /\bBearer\s+[a-f0-9]{64}\b/i],
     ['private key', /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/],
     ['API credential', /\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{24,}/],
     ['GitHub credential', /\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{40,})/],

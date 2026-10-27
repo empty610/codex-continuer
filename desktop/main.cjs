@@ -194,10 +194,10 @@ async function start() {
   const runtime = await import('../plugin/runtime.js');
   await runtime.ensureService();
   const display = screen.getPrimaryDisplay().workArea;
-  win = new BrowserWindow({ x: display.x + display.width - sizes.compact.width - 16, y: display.y + display.height - sizes.compact.height - 16, ...sizes.compact, show: false, alwaysOnTop: false, frame: false, thickFrame: false, roundedCorners: false, transparent: true, backgroundColor: '#00000000', resizable: false, skipTaskbar: true, hasShadow: false, autoHideMenuBar: true, title: 'Codex Continuer Widget', webPreferences: { preload: join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  win = new BrowserWindow({ x: display.x + display.width - sizes.compact.width - 16, y: display.y + display.height - sizes.compact.height - 16, ...sizes.compact, show: false, alwaysOnTop: false, frame: false, thickFrame: false, roundedCorners: false, transparent: true, backgroundColor: '#00000000', resizable: false, skipTaskbar: true, hasShadow: false, autoHideMenuBar: true, title: 'Codex Continuer Widget', webPreferences: { preload: join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, devTools: false } });
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('console-message', details => { if (details.level === 'error') console.error('挂件页面错误：' + details.message.slice(0, 2000)); });
-  win.webContents.on('will-navigate', (event, url) => { if (url !== origin + '/widget') event.preventDefault(); });
+  for (const name of ['will-navigate', 'will-redirect']) win.webContents.on(name, (event, url) => { if (url !== origin + '/widget') event.preventDefault(); });
   win.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   const pinned = localTls.readIdentity(dataDir, process.env.CONTINUER_DEMO === '1').certificate;
   win.webContents.session.setCertificateVerifyProc((request, callback) => {

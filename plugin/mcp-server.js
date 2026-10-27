@@ -15,7 +15,7 @@ input.on('line', async line => {
   if (message.id == null) return;
   try {
     let result;
-    if (message.method === 'initialize') result = { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'codex-continuer', version: config.version }, instructions: 'Continuer manages only explicitly created/imported tasks. Read status without starting tasks. Starting, resuming or enabling scheduling needs user intent. The widget is a native companion window that follows Codex, not a modification to Codex UI. Never approve a task permission request on the user’s behalf.' };
+    if (message.method === 'initialize') result = { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'codex-continuer', version: config.version }, instructions: 'Continuer manages only explicitly created/imported tasks. Read status without starting tasks. Creating work, resuming, enabling monitoring or scheduling, and changing execution policy require the user to operate the native widget. MCP cannot authorize these actions. The widget is a native companion window that follows Codex, not a modification to Codex UI. Never approve a task permission request on the user’s behalf.' };
     else if (message.method === 'ping') result = {};
     else if (message.method === 'tools/list') result = { tools };
     else if (message.method === 'tools/call') {

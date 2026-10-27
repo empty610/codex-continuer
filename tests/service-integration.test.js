@@ -105,14 +105,16 @@ test('real MCP cold startup remains read-only until explicit activation; summari
   assert.equal(f.calls().filter(method => method === 'fixture/queue').length, 1);
   const approval = (await f.request('/api/state')).approvals[0];
   assert.equal(approval.requiresDetails, true); assert.ok(approval.command.length <= 1000);
-  const complete = await f.request(`/api/approvals/88?token=${approval.detailToken}`);
+  const complete = await f.request('/api/approvals/88', { token: approval.detailToken });
   assert.equal(complete.approval.command.endsWith('fixture-end'), true);
-  await assert.rejects(f.request('/api/approvals/88?token=obsolete'), /失效/);
+  await assert.rejects(f.request('/api/approvals/88', { token: 'obsolete' }), /失效/);
+  await assert.rejects(f.request(`/api/approvals/88?token=${approval.detailToken}`), /不存在/);
+  await assert.rejects(f.request(`/api/approvals/88?token=${approval.detailToken}`, {}), /失效/);
   await assert.rejects(f.request('/api/approval', {id:88,decision:'accept'}), /过期/);
   await assert.rejects(f.request('/api/approval', {id:88,decision:'accept',token:'obsolete'}), /过期/);
   await f.request('/api/approval', {id:88,decision:'decline',token:approval.detailToken});
   assert.equal(f.calls().filter(method => method === 'fixture/approval').length, 1);
-  await assert.rejects(f.request(`/api/approvals/88?token=${approval.detailToken}`), /失效/);
+  await assert.rejects(f.request('/api/approvals/88', { token: approval.detailToken }), /失效/);
 });
 
 test('all API routes reject absent, wrong, cookie and query credentials before any work', { timeout: 25000 }, async t => {
@@ -123,10 +125,15 @@ test('all API routes reject absent, wrong, cookie and query credentials before a
     }
   }
   assert.equal((await fetch(f.origin + '/api/state?access=' + access.readToken(f.directory))).status, 401);
+  const policy = (await fetch(f.origin + '/widget')).headers.get('content-security-policy');
+  for (const directive of ["base-uri 'none'", "form-action 'none'", "object-src 'none'"]) assert.ok(policy.includes(directive));
   for (const path of ['/api/tasks', '/api/settings', '/api/approval', '/api/import', '/api/shutdown']) {
     const response = await fetch(f.origin + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Continuer-Client': '1' }, body: '{}' }); assert.equal(response.status, 401, path);
   }
   const crossOrigin = await fetch(f.origin + '/api/state', { headers: { Authorization: 'Bearer ' + access.readToken(f.directory), Origin: 'https://example.invalid' } }); assert.equal(crossOrigin.status, 403);
+  const flood = await Promise.all(Array.from({ length: 80 }, () => fetch(f.origin + '/api/state')));
+  assert.ok(flood.some(response => response.status === 429));
+  assert.equal((await f.request('/api/health')).app, 'codex-continuer');
   assert.equal((await f.request('/api/state')).tasks.length, 2); assert.equal(f.calls().includes('turn/start'), false); assert.equal(f.calls().includes('fixture/queue'), false);
 });
 

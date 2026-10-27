@@ -59,7 +59,7 @@ cd .\codex-continuer
 
 同一聊天同时只允许一个导入操作；挂件和 MCP 共用这项保护。重复请求会提示已添加或正在添加，不会创建第二条记录，也不会重置已有监测。读取失败后可以重新导入，不同聊天可以同时添加。
 
-插件工具：`continuer_open_widget`、`continuer_status`、`continuer_list_sessions`、`continuer_create_task`、`continuer_import_session`、`continuer_task_action`、`continuer_update_settings`。读状态不会创建任务，导入会话保持暂停，授权决定由用户在面板中操作。
+插件工具：`continuer_open_widget`、`continuer_status`、`continuer_list_sessions`、`continuer_import_session`、`continuer_task_action`、`continuer_update_settings`。MCP 仅可查询、打开挂件、暂停状态导入、暂停/结束任务、关闭持续工作和关闭调度。创建任务、恢复执行、开启监测以及修改执行上限/额度策略必须由用户在挂件中操作；旧的 create/resume/enabled=true 工具调用会被拒绝，模型提供“已确认”字段也不能绕过。
 
 本机构建产物在 `dist/marketplace/plugins/codex-continuer`，runtime 保留本项目数据目录与 Node 路径。`npm run build:plugin -- --portable` 另生成 `dist/portable-marketplace`，不绑定本机绝对路径，默认使用目标电脑的 `%LOCALAPPDATA%\CodexContinuer`，需安装 Node。两种包都带 portable 插件清单和 CLI 兼容清单；白名单不包含任务历史、凭据和缓存。构建在暂存目录完成并验证 SHA-256 清单后才替换正式包，避免旧文件残留。
 

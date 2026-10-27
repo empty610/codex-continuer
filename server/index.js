@@ -16,6 +16,7 @@ import { createStaticAssets } from './static-assets.js';
 import access from './access.cjs';
 import exitState from './exit-state.cjs';
 import localTls from './local-tls.cjs';
+import { clientErrorMessage, createRequestLimiter } from './http-policy.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const demo = process.argv.includes('--demo');
@@ -51,10 +52,11 @@ manager.on('persistence-error', error => console.error(`输出合并保存失败
 manager.on('operation-error', error => console.error(`操作未完成：${error.message}`));
 const routeApi = createApiRouter({ manager, health, stream, rpc, demo, summary, stop });
 const serveStatic = createStaticAssets(root);
+const allowRequest = createRequestLimiter();
 const server = createServer(secureOptions, async (req, res) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'no-referrer');
-  res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'");
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'");
   // Loopback binding + exact Host + same-origin mutations prevent DNS rebinding/CSRF.
   if (req.headers.host !== `127.0.0.1:${port}`) return json(res, 403, { error: '请使用 127.0.0.1 访问' });
   if (req.headers.origin && req.headers.origin !== origin) return json(res, 403, { error: '跨站请求被拒绝' });
@@ -62,11 +64,15 @@ const server = createServer(secureOptions, async (req, res) => {
   try {
     const url = new URL(req.url, origin);
     if (url.origin !== origin) return json(res, 403, { error: '请求来源无效' });
-    if (url.pathname.startsWith('/api/') && !access.authorized(req, accessToken)) return json(res, 401, { error: '请用启动脚本重新打开 Continuer；本地 API 需要访问凭据' });
+    if (url.pathname.startsWith('/api/')) {
+      const authorized = access.authorized(req, accessToken);
+      if (!allowRequest(authorized, req.method)) { res.setHeader('Retry-After', '1'); return json(res, 429, { error: '请求过于频繁，请稍后重试' }); }
+      if (!authorized) return json(res, 401, { error: '请用启动脚本重新打开 Continuer；本地 API 需要访问凭据' });
+    }
     if (await routeApi(req, res, url)) return;
     if (await serveStatic(req, res, url)) return;
     json(res, 404, { error: '接口或页面不存在' });
-  } catch (error) { json(res, 400, { error: error.code === 'ENOENT' ? '项目目录不存在' : error.message }); }
+  } catch (error) { json(res, 400, { error: clientErrorMessage(error) }); }
 });
 server.listen(port, '127.0.0.1', () => { health.record('running'); console.log(`Codex Continuer ${demo ? '(DEMO)' : ''}: ${origin}`); manager.start(); });
 server.on('error', error => { console.error(error.message); process.exitCode = 1; health.record('failed', 'listen-error'); manager.safely(() => manager.stop()); });

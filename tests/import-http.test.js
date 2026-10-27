@@ -71,7 +71,7 @@ test('HTTP and MCP imports share one reservation and persist one recovery delive
     assert.equal(persisted[0].wake.delivery, 'sent');
     // The real HTTP routes share the tighter limits and mode-specific schema.
     await assert.rejects(request('/api/settings', { pollSeconds: 91 }), /90/);
-    await dispatch('continuer_update_settings', { pollSeconds: 90, maxWakeSends: 1 }, runtime);
+    await request('/api/settings', { pollSeconds: 90, maxWakeSends: 1 });
     const capped = (await request('/api/state')).tasks.find(task => task.id === imported[0].id);
     assert.equal(capped.status, 'paused'); assert.equal(capped.continuous, false);
     await assert.rejects(request(`/api/tasks/${capped.id}`, { action: 'resume' }), /上限/);

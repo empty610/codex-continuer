@@ -208,9 +208,10 @@ test('detail previews preserve full paths/activity and failed requests can retry
 });
 
 test('truncated approvals cannot be accepted before full content arrives and stale details are ignored', async () => {
-  const pending = [], details = new ApprovalDetails(() => { const held = deferred(); pending.push(held); return held.promise; }, () => {});
+  const pending = [], requests = [], details = new ApprovalDetails((...args) => { requests.push(args); const held = deferred(); pending.push(held); return held.promise; }, () => {});
   const summary = { id: 1, detailToken: 'old', command: 'preview…', requiresDetails: true };
   details.readAll([summary]); assert.equal(details.ready(summary), false);
+  assert.deepEqual(requests[0], ['/api/approvals/1', { token: 'old' }]);
   const current = { ...summary, detailToken: 'new' }; details.readAll([current]);
   pending[0].resolve({ approval: { ...summary, command: 'obsolete' } }); await Promise.resolve(); assert.equal(details.ready(current), false);
   pending[1].resolve({ approval: { ...current, command: 'full command' } }); await Promise.resolve();

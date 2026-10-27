@@ -11,6 +11,10 @@ test('public privacy guard rejects live identifiers in every exported text surfa
   t.after(() => { assert.equal(dirname(realpathSync(directory)), parent); rmSync(directory, { recursive: true, force: true }); });
   for (const name of publicFiles()) { const target = join(directory, name); mkdirSync(dirname(target), { recursive: true }); copyFileSync(name, target); }
   assert.ok(checkPublic(directory).files > 100);
+  const credentialFile = join(directory, 'tests/quota-wake.test.js'), credentialOriginal = readFileSync(credentialFile);
+  writeFileSync(credentialFile, credentialOriginal.toString() + '\nBearer ' + 'a'.repeat(64));
+  assert.throws(() => checkPublic(directory), /local Bearer credential/);
+  writeFileSync(credentialFile, credentialOriginal);
   for (const name of ['server/tls-live.json', 'plugin/access-demo.token', 'public/runtime.json', 'tests/.env.local', 'desktop/private.pfx']) {
     const file = join(directory, name); writeFileSync(file, 'synthetic-private-data');
     assert.throws(() => checkPublic(directory), error => error.message.includes(name + ': private runtime file'));

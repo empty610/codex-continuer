@@ -6,16 +6,18 @@ import logging from '../server/logging.cjs';
 import { diagnostic, alive } from '../server/health.js';
 import access from '../server/access.cjs';
 import exitState from '../server/exit-state.cjs';
+import localTls from '../server/local-tls.cjs';
 
 export const root = settings.root;
 const config = settings.config;
 export const dataDir = settings.dataDir;
 export const port = settings.port;
-export const origin = `http://127.0.0.1:${port}`;
+export const origin = `https://127.0.0.1:${port}`;
 export const readAccessToken = () => access.readToken(dataDir, process.env.CONTINUER_DEMO === '1');
 export async function request(path, payload, { timeoutMs = 35000 } = {}) {
   const token = readAccessToken();
-  const response = await fetch(origin + path, { signal: AbortSignal.timeout(timeoutMs), redirect: 'error', headers: { ...(token ? { Authorization: 'Bearer ' + token } : {}), ...(payload === undefined ? {} : { 'Content-Type': 'application/json', 'X-Continuer-Client': '1' }) }, ...(payload === undefined ? {} : { method: 'POST', body: JSON.stringify(payload) }) });
+  if (typeof path !== 'string' || !path.startsWith('/api/') || path.includes('\\') || new URL(origin + path).origin !== origin) throw Error('Invalid API path');
+  const response = await localTls.fetchLocal(origin + path, { signal: AbortSignal.timeout(timeoutMs), headers: { ...(token ? { Authorization: 'Bearer ' + token } : {}), ...(payload === undefined ? {} : { 'Content-Type': 'application/json', 'X-Continuer-Client': '1' }) }, ...(payload === undefined ? {} : { method: 'POST', body: JSON.stringify(payload) }) }, localTls.requestOptions(dataDir, process.env.CONTINUER_DEMO === '1'));
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
   return result;
@@ -46,7 +48,7 @@ export async function ensureService() {
       const state = await request('/api/state');
       return verifiedService(state);
     } catch (error) {
-      if (!error.cause || error.cause.code !== 'ECONNREFUSED') throw error;
+      if (error.code !== 'TLS_IDENTITY_MISSING' && error.cause?.code !== 'ECONNREFUSED') throw error;
     }
     const node = config.nodePath || (process.versions.electron ? process.env.CONTINUER_NODE || 'node' : process.execPath);
     if (!node) throw new Error('缺少 Node.js 路径，请重新运行插件安装器');
@@ -54,11 +56,11 @@ export async function ensureService() {
     // Opening a widget or reading MCP state never restores saved scheduling by itself.
     const child = launch(node, [join(root, 'server/index.js'), '--observe-only', ...(process.env.CONTINUER_DEMO === '1' ? ['--demo'] : [])], 'service', { PORT: String(port) });
     let spawnError; child.once('error', e => { spawnError = e; });
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 120; i++) {
       if (spawnError) throw spawnError;
       await new Promise(resolve => setTimeout(resolve, 150));
       let state;
-      try { state = await request('/api/state'); } catch (error) { if (error.cause?.code === 'ECONNREFUSED') continue; throw error; }
+      try { state = await request('/api/state'); } catch (error) { if (error.code === 'TLS_IDENTITY_MISSING' || error.cause?.code === 'ECONNREFUSED') continue; throw error; }
       return verifiedService(state);
     }
     throw new Error('本地服务启动失败，请查看 data/service-stderr.log');

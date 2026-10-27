@@ -4,7 +4,7 @@ const { createHash } = require('node:crypto');
 
 const root = resolve(__dirname, '..');
 const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version;
-const protocolVersion = 3, schemaVersion = 1;
+const protocolVersion = 4, schemaVersion = 1;
 let config = {};
 try { config = JSON.parse(readFileSync(join(root, 'runtime.json'), 'utf8')); } catch {}
 const dataDir = resolve(process.env.CONTINUER_DATA_DIR || config.dataDir ||

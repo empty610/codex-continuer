@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import { Manager } from '../server/manager.js';
 import { QueueSender } from '../server/queue-sender.js';
 
-const threadId = '01a16385-26c1-79e3-a661-09e3fc8ed62e';
+const threadId = '11111111-1111-4111-8111-111111111111';
 const sample = (used, secondary = 10) => ({ rateLimits: { primary: { usedPercent: used }, secondary: { usedPercent: secondary } } });
 async function setup(saved, send) {
   const rpc = new EventEmitter(); rpc.ready = true; rpc.calls = [];

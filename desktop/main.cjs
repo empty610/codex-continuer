@@ -7,6 +7,7 @@ const { place, placeIndependent, offsetFrom, sizes, compactSize, samePlacementCo
 const { createPointerDrag } = require('./pointer-drag.cjs');
 const runtimeConfig = require('../server/config.cjs');
 const logging = require('../server/logging.cjs');
+const localTls = require('../server/local-tls.cjs');
 
 app.setName('Codex Continuer');
 const dataDir = runtimeConfig.dataDir;
@@ -19,7 +20,7 @@ try { prefs = { ...prefs, ...JSON.parse(readFileSync(preferenceFile, 'utf8')) };
 let preferenceError = null;
 const save = () => { try { writeFileSync(preferenceFile, JSON.stringify(prefs)); preferenceError = null; } catch (error) { preferenceError = error.message; console.error(`挂件设置未保存：${error.message}`); } };
 const port = runtimeConfig.port;
-const origin = `http://127.0.0.1:${port}`;
+const origin = `https://127.0.0.1:${port}`;
 let win, tray, widgetMenu, tracker, anchor, pointerDrag, isReady = false, targetVisible = false, closing = false, lastDiagnostic, lastSentState, menuOpen = false, dragging = false, boundsTimer;
 let panelSize = { width: sizes.expanded.width - 18, height: sizes.expanded.height - 18 };
 let settledPlacement, restoringMode=false;
@@ -198,6 +199,10 @@ async function start() {
   win.webContents.on('console-message', details => { if (details.level === 'error') console.error('挂件页面错误：' + details.message.slice(0, 2000)); });
   win.webContents.on('will-navigate', (event, url) => { if (url !== origin + '/widget') event.preventDefault(); });
   win.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  const pinned = localTls.readIdentity(dataDir, process.env.CONTINUER_DEMO === '1').certificate;
+  win.webContents.session.setCertificateVerifyProc((request, callback) => {
+    callback(request.hostname === '127.0.0.1' && localTls.matchesCertificate(request.certificate.data, pinned) ? 0 : -2);
+  });
   // Keep the native credential in the main process and never attach it to
   // another window, origin, static asset or redirected request.
   win.webContents.session.webRequest.onBeforeSendHeaders({ urls: [origin + '/api/*'] }, (details, callback) => {

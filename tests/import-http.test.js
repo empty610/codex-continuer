@@ -9,6 +9,7 @@ import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { dispatch } from '../plugin/tools.js';
 import access from '../server/access.cjs';
+import { pinnedFetch } from './fixtures/local-fetch.js';
 
 test('HTTP and MCP imports share one reservation and persist one recovery delivery', { timeout: 20000 }, async () => {
   const temporaryRoot = realpathSync(tmpdir());
@@ -34,7 +35,7 @@ test('HTTP and MCP imports share one reservation and persist one recovery delive
   });
   const exited = once(child, 'exit');
   let stderr = ''; child.stderr.on('data', data => { stderr += data; });
-  const origin = `http://127.0.0.1:${port}`;
+  const origin = `https://127.0.0.1:${port}`, fetch = pinnedFetch(dataDir, true);
   async function request(path, body) {
     const response = await fetch(origin + path, {
       signal: AbortSignal.timeout(3000), headers: { Authorization: 'Bearer ' + access.readToken(dataDir, true) },

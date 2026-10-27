@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { promisify } from 'node:util';
 import { execFile } from 'node:child_process';
 import { createServer } from 'node:net';
-import { request as httpRequest } from 'node:http';
+import { request as httpRequest } from 'node:https';
 import { mkdtempSync, realpathSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -12,13 +12,15 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { Store } from '../server/store.js';
 import { alive, diagnostic } from '../server/health.js';
 import access from '../server/access.cjs';
+import localTls from '../server/local-tls.cjs';
+import { pinnedFetch } from './fixtures/local-fetch.js';
 
 const execute = promisify(execFile);
 async function service(t, { corrupt = false } = {}) {
   const parent = realpathSync(tmpdir()), directory = mkdtempSync(join(parent, 'continuer-cold-start-'));
   const probe = createServer(); await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve));
   const port = probe.address().port; await new Promise(resolve => probe.close(resolve));
-  const origin = `http://127.0.0.1:${port}`;
+  const origin = `https://127.0.0.1:${port}`, fetch = pinnedFetch(directory);
   const preload = join(directory, 'mock-channels.mjs'), callsFile = join(directory, 'calls.jsonl');
   // This preload is inherited by the launched service. Neither real Codex nor
   // real queue binaries can be reached even if the scheduling assertion fails.
@@ -69,11 +71,11 @@ async function service(t, { corrupt = false } = {}) {
     return JSON.parse(result.stdout);
   };
   const calls = () => existsSync(callsFile) ? readFileSync(callsFile, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line).method) : [];
-  return { directory, file, origin, env, request, status, calls };
+  return { directory, file, origin, env, request, status, calls, fetch };
 }
 
 test('real MCP cold startup remains read-only until explicit activation; summaries, details and assets work over HTTP', { timeout: 25000 }, async t => {
-  const f = await service(t), read = await f.status();
+  const f = await service(t), read = await f.status(), fetch = f.fetch;
   assert.equal(read.observationOnly, true); assert.equal(read.settings.enabled, false);
   await f.status('continuer_list_sessions'); await f.request('/api/refresh', {});
   assert.equal(f.calls().includes('turn/start'), false); assert.equal(f.calls().includes('fixture/queue'), false);
@@ -93,7 +95,7 @@ test('real MCP cold startup remains read-only until explicit activation; summari
   assert.ok(visited.has('/view-lifecycle.js'));
   const script = await fetch(f.origin + '/app.js'), etag = script.headers.get('etag'); await script.text(); assert.ok(etag);
   const unchanged = await fetch(f.origin + '/app.js', { headers: { 'If-None-Match': etag } }); assert.equal(unchanged.status, 304); assert.equal(await unchanged.text(), '');
-  const health = await f.request('/api/health'); assert.equal(health.buildId, snapshot.buildId); assert.equal(health.protocolVersion, 3);
+  const health = await f.request('/api/health'); assert.equal(health.buildId, snapshot.buildId); assert.equal(health.protocolVersion, 4);
   assert.equal(health.resources.taskLimit, 100); assert.equal(health.dataDir, f.directory);
   // A second writer cannot touch the same state, even before binding its port.
   await assert.rejects(execute(process.execPath, ['server/index.js'], { env: f.env, timeout: 5000, windowsHide: true }));
@@ -114,7 +116,7 @@ test('real MCP cold startup remains read-only until explicit activation; summari
 });
 
 test('all API routes reject absent, wrong, cookie and query credentials before any work', { timeout: 25000 }, async t => {
-  const f = await service(t); await f.status();
+  const f = await service(t); await f.status(); const fetch = f.fetch;
   for (const path of ['/api/state', '/api/health', '/api/threads', '/api/events', '/api/logs', '/api/tasks/direct', '/api/approvals/88', '/x/../api/state', '/api/unknown']) {
     for (const headers of [{}, { Authorization: 'Bearer ' + '0'.repeat(64) }, { Cookie: 'access=' + access.readToken(f.directory) }]) {
       const response = await fetch(f.origin + path, { headers }); assert.equal(response.status, 401, path); assert.doesNotMatch(await response.text(), /Private execution goal|Private monitoring note/);
@@ -133,7 +135,7 @@ test('real HTTP requests preserve UTF-8 codepoints split across writes', { timeo
   const input = { name: '分片中文任务😀', cwd: f.directory, prompt: '核对中文😀验收标准', continuous: false };
   const bytes = Buffer.from(JSON.stringify(input)), split = bytes.indexOf(Buffer.from('核')) + 1;
   const result = await new Promise((resolve, reject) => {
-    const req = httpRequest(f.origin + '/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Continuer-Client': '1', 'Content-Length': bytes.length, Authorization: 'Bearer ' + access.readToken(f.directory) } }, res => {
+    const req = httpRequest(f.origin + '/api/tasks', { ...localTls.requestOptions(f.directory), method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Continuer-Client': '1', 'Content-Length': bytes.length, Authorization: 'Bearer ' + access.readToken(f.directory) } }, res => {
       res.setEncoding('utf8'); let content = '';
       res.on('data', chunk => { content += chunk; }); res.on('end', () => { try { assert.equal(res.statusCode, 200); resolve(JSON.parse(content)); } catch (error) { reject(error); } });
     });

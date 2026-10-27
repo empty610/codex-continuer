@@ -11,7 +11,7 @@
 
 安装不会开启调度。重载 Codex 插件后再打开挂件；原聊天接续额外要求桌面附带 CLI 支持 `queue --thread --message`。可在插件目录运行 `node scripts/doctor.js --strict` 检查能力；此命令不启动模型，不发送消息。
 
-浏览器界面请从插件目录运行 `Start-Continuer.ps1`，它使用本地访问凭据打开页面。直接访问裸地址不会获得任务信息。不要转发带 `#access=` 的启动链接或上传数据目录、诊断日志。
+从插件目录运行 `Start-Continuer.ps1` 打开原生挂件。浏览器凭据链接已停用；客户端先校验本地固定证书再发送凭据。不要上传数据目录、`tls-*.json`、访问令牌或未脱敏诊断日志。
 
 卸载时，在实际安装的插件目录运行 `Uninstall-Plugin.ps1`，依次关闭自启动、停止服务、退出挂件并移除插件注册。任务数据保留在 `%LOCALAPPDATA%\CodexContinuer`，自定义 `CONTINUER_DATA_DIR` 时以该目录为准。卸载不会删除数据；旧版本升级前先停止其服务。
 

@@ -436,8 +436,17 @@ export class Manager extends EventEmitter {
     if (task && task.mode !== 'quota-wake' && this.deferTurnEvent(task, msg, true)) return;
     if (!task || !this.matchesTurn(task, msg.params || {})) { this.rejectRequest(msg); return; }
     if (task.status === 'pausing') { this.rejectRequest(msg); return; }
-    const supported = ['item/commandExecution/requestApproval', 'item/fileChange/requestApproval'].includes(msg.method);
-    const reviewable = (msg.params.command == null || (typeof msg.params.command === 'string' && msg.params.command.length <= 12000))
+    // File changes need a complete patch/scope view. Until that exists, leave
+    // these requests to the original Codex client instead of approving blindly.
+    const supported = msg.method === 'item/commandExecution/requestApproval';
+    const commandFields = ['threadId', 'turnId', 'itemId', 'approvalId', 'command', 'reason', 'cwd', 'commandActions', 'kind', 'startedAtMs'];
+    // CLI 0.153.2 permits null optional scope fields. A non-null scope needs
+    // its own review UI; unknown fields still fail closed, even when null.
+    const absentScopeFields = ['additionalPermissions', 'availableDecisions', 'environmentId', 'networkApprovalContext', 'proposedExecpolicyAmendment', 'proposedNetworkPolicyAmendments'];
+    const reviewable = typeof msg.params.command === 'string' && !!msg.params.command.trim() && msg.params.command.length <= 12000
+      && Object.keys(msg.params).every(key => commandFields.includes(key) || (absentScopeFields.includes(key) && msg.params[key] === null))
+      && (msg.params.kind === undefined || msg.params.kind === 'command')
+      && (msg.params.startedAtMs === undefined || Number.isSafeInteger(msg.params.startedAtMs))
       && (msg.params.reason == null || (typeof msg.params.reason === 'string' && msg.params.reason.length <= 2000))
       && (msg.params.cwd == null || typeof msg.params.cwd === 'string');
     if (supported && reviewable) {
@@ -448,7 +457,7 @@ export class Manager extends EventEmitter {
     } else {
       this.rejectRequest(msg);
       this.cancelApprovals(task);
-      task.status = 'pausing'; task.activity = reviewable ? '需要用户输入，请在 Codex 中处理后继续' : '授权内容超出可审阅范围，已拒绝，请在原 Codex 会话核对后继续';
+      task.status = 'pausing'; task.activity = msg.method === 'item/fileChange/requestApproval' ? '文件修改范围无法完整审阅，已拒绝；请在原 Codex 中核对后手动继续' : reviewable ? '需要用户输入，请在 Codex 中处理后继续' : '授权内容超出可审阅范围，已拒绝，请在原 Codex 会话核对后继续';
       if (task.turnId) void this.safelyAsync(() => this.interruptTask(task));
     }
     this.changed();
@@ -471,6 +480,7 @@ export class Manager extends EventEmitter {
     if (this.persistence.status !== 'ok') throw new Error('请先恢复数据保存，再处理授权');
     const request = this.approvals.get(String(id));
     if (!request || typeof token !== 'string' || token !== request.detailToken || !['accept', 'decline'].includes(decision)) throw new Error('授权请求已过期或决定无效');
+    if (request.method !== 'item/commandExecution/requestApproval' || typeof request.command !== 'string' || !request.command.trim()) throw new Error('授权内容无法完整审阅，请在原 Codex 中处理');
     const task = this.state.tasks.find(t => t.id === request.taskId);
     if (this.stopped || !this.rpc.ready || !task || task.status !== 'approval' || !this.matchesTurn(task, request)) throw new Error('授权所属轮次已失效或正在暂停');
     // Confirm storage before granting an operation permission.

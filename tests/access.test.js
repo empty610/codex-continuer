@@ -21,15 +21,16 @@ test('credentials are random, persistent, mode-separated and malformed files fai
   assert.throws(() => access.createToken(dir), /凭据文件无效/); assert.equal(readFileSync(file, 'utf8'), 'damaged');
 });
 
-test('browser bootstrap erases the secret fragment and stores only within its origin session', () => {
+test('retired browser bootstrap discards legacy credentials and never authorizes requests', () => {
   const token = 'a'.repeat(64), saved = new Map(); let replaced;
   const source = readFileSync(new URL('../public/access.js', import.meta.url), 'utf8').replace(/^export /gm, '') + '\nthis.headers = accessHeaders();';
-  const context = { window: {}, location: { hash: '#access=' + token, pathname: '/', search: '' }, history: { replaceState(_state, _title, url) { replaced = url; } }, sessionStorage: { setItem: (key, value) => saved.set(key, value), getItem: key => saved.get(key) }, URLSearchParams };
-  runInNewContext(source, context); assert.equal(replaced, '/'); assert.equal(context.headers.Authorization, 'Bearer ' + token);
-  assert.equal(saved.size, 1);
+  saved.set('continuer-access', token);
+  const context = { window: {}, location: { hash: '#access=' + token, pathname: '/', search: '' }, history: { replaceState(_state, _title, url) { replaced = url; } }, sessionStorage: { removeItem: key => saved.delete(key), getItem: key => saved.get(key) }, URLSearchParams };
+  runInNewContext(source, context); assert.equal(replaced, '/'); assert.equal(context.headers.Authorization, undefined);
+  assert.equal(saved.size, 0);
 });
 
-test('authenticated streams send header credentials, decode split UTF-8 and stop after close', async t => {
+test('browser streams do not send legacy credentials, decode split UTF-8 and stop after close', async t => {
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'sessionStorage');
   Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, value: { getItem: () => 'b'.repeat(64) } });
   t.after(() => { if (descriptor) Object.defineProperty(globalThis, 'sessionStorage', descriptor); else delete globalThis.sessionStorage; });
@@ -40,7 +41,7 @@ test('authenticated streams send header credentials, decode split UTF-8 and stop
   const bytes = new TextEncoder().encode('data: {"text":"中文😀"}\n\ndata: {"stale":true}\n\n');
   for (const byte of bytes) controller.enqueue(Uint8Array.of(byte));
   await received; assert.deepEqual(messages, [{ text: '中文😀' }]);
-  assert.equal(options.headers.Authorization, 'Bearer ' + 'b'.repeat(64)); assert.equal(options.credentials, 'omit'); assert.equal(options.redirect, 'error'); assert.equal(options.signal.aborted, true);
+  assert.equal(options.headers.Authorization, undefined); assert.equal(options.credentials, 'omit'); assert.equal(options.redirect, 'error'); assert.equal(options.signal.aborted, true);
 });
 
 test('unauthorized streams do not reconnect, and oversized frames are rejected', async () => {

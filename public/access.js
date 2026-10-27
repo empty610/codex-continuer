@@ -1,17 +1,10 @@
-// A fragment is never sent in an HTTP URL. Clear it before making requests.
-// sessionStorage is scoped to this origin (including its port), unlike cookies.
-const storageKey = 'continuer-access';
+// Browser credential links are retired. Only the pinned native window receives
+// API authorization from its main process; discard legacy browser credentials.
 if (typeof window !== 'undefined' && typeof location !== 'undefined') {
-  const token = new URLSearchParams(location.hash.slice(1)).get('access');
-  if (token) {
-    history.replaceState(null, '', location.pathname + location.search);
-    if (/^[a-f0-9]{64}$/.test(token)) sessionStorage.setItem(storageKey, token);
-  }
+  if (new URLSearchParams(location.hash.slice(1)).has('access')) history.replaceState(null, '', location.pathname + location.search);
+  sessionStorage.removeItem('continuer-access');
 }
-export function accessHeaders() {
-  const token = typeof sessionStorage === 'undefined' ? null : sessionStorage.getItem(storageKey);
-  return token ? { Authorization: 'Bearer ' + token } : {};
-}
+export function accessHeaders() { return {}; }
 
 // Native EventSource cannot send authorization headers. Preserve its small
 // onmessage/onerror/close contract using a bounded fetch stream with retries.

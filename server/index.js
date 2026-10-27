@@ -1,4 +1,4 @@
-import { createServer } from 'node:http';
+import { createServer } from 'node:https';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CodexRpc } from './rpc.js';
@@ -15,12 +15,13 @@ import { createApiRouter, json } from './http-routes.js';
 import { createStaticAssets } from './static-assets.js';
 import access from './access.cjs';
 import exitState from './exit-state.cjs';
+import localTls from './local-tls.cjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const demo = process.argv.includes('--demo');
 const port = Number(process.env.PORT || (demo ? 4318 : config.port));
 if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Invalid Continuer port');
-const origin = `http://127.0.0.1:${port}`;
+const origin = `https://127.0.0.1:${port}`;
 const dataDir = config.dataDir;
 if (process.argv.includes('--observe-only') && exitState.requested(dataDir, demo)) throw Error('Continuer 已退出，请先手动打开挂件。');
 if (!process.argv.includes('--observe-only')) exitState.clear(dataDir, demo);
@@ -29,6 +30,7 @@ logging.rotateLogs(dataDir);
 const releaseLease = await acquireLease(dataDir, demo ? 'demo-service' : 'service');
 process.once('exit', releaseLease);
 const accessToken = access.createToken(dataDir, demo);
+const secureOptions = await localTls.serverOptions(dataDir, demo, accessToken);
 const store = new Store(resolve(dataDir, demo ? 'demo-state.json' : 'state.json'));
 if (demo) { try { if (!store.load()) store.save(demoState()); } catch { /* Manager exposes recovery without overwriting damaged data. */ } }
 const rpc = demo ? new DemoRpc() : new CodexRpc();
@@ -49,7 +51,7 @@ manager.on('persistence-error', error => console.error(`输出合并保存失败
 manager.on('operation-error', error => console.error(`操作未完成：${error.message}`));
 const routeApi = createApiRouter({ manager, health, stream, rpc, demo, summary, stop });
 const serveStatic = createStaticAssets(root);
-const server = createServer(async (req, res) => {
+const server = createServer(secureOptions, async (req, res) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'");

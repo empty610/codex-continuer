@@ -48,7 +48,7 @@ test('demo exit leaves live markers and the startup watcher alone', async t => {
 
 test('passive reads and automatic opening do not restart an exited app; manual opening clears the latch', t => {
   const dataDir = directory(t); exitState.mark(dataDir);
-  const code = `let calls=0;globalThis.fetch=async()=>{calls++;throw Error('fixture network failure')};const runtime=await import(${JSON.stringify(new URL('../plugin/runtime.js', import.meta.url).href)});let blocked=0;for(const action of [()=>runtime.ensureService(),()=>runtime.openWidget({automatic:true})])try{await action()}catch(error){if(error.message.includes('已退出'))blocked++}const before=calls;try{await runtime.openWidget()}catch{};console.log(JSON.stringify({blocked,before,after:calls}));`;
+  const code = `const localTls=(await import(${JSON.stringify(new URL('../server/local-tls.cjs', import.meta.url).href)})).default;localTls.requestOptions=()=>({});let calls=0;localTls.fetchLocal=async()=>{calls++;throw Error('fixture network failure')};const runtime=await import(${JSON.stringify(new URL('../plugin/runtime.js', import.meta.url).href)});let blocked=0;for(const action of [()=>runtime.ensureService(),()=>runtime.openWidget({automatic:true})])try{await action()}catch(error){if(error.message.includes('已退出'))blocked++}const before=calls;try{await runtime.openWidget()}catch{};console.log(JSON.stringify({blocked,before,after:calls}));`;
   const result = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '--eval', code], { env: { ...process.env, CONTINUER_DATA_DIR: dataDir, CONTINUER_DEMO: '' }, windowsHide: true, encoding: 'utf8' }));
   assert.deepEqual(result, { blocked: 2, before: 0, after: 1 }); assert.equal(exitState.requested(dataDir), false);
 });
@@ -65,7 +65,7 @@ test('verified force cleanup terminates an owned service tree and refuses unrela
   const execute = promisify(execFile);
   for (let i = 0; i < 40; i++) { try { childPid = JSON.parse(readFileSync(childFile, 'utf8')).pid; break; } catch { await delay(50); } }
   assert.ok(childPid);
-  await assert.rejects(execute('powershell.exe', args(process.pid), { windowsHide: true, timeout: 5000 }), /Refusing to stop/);
+  await assert.rejects(execute('powershell.exe', args(process.pid), { windowsHide: true, timeout: 10000 }), /Refusing to stop/);
   assert.equal(alive(process.pid), true);
   await execute('powershell.exe', args(server.pid), { windowsHide: true, timeout: 10000 }); await exited;
   for (let i = 0; i < 30 && alive(childPid); i++) await delay(50);

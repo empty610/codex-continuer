@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { createServer } from 'node:net';
 import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import access from '../server/access.cjs';
 import { pinnedFetch } from './fixtures/local-fetch.js';
 
@@ -15,13 +15,11 @@ const executable = fileURLToPath(new URL('../node_modules/electron/dist/electron
 for (const expanded of [false, true]) test(`hidden isolated widget is ready without loading unused views (expanded: ${expanded})`, { skip: process.platform !== 'win32' || !existsSync(executable), timeout: 40000 }, async () => {
   const parent = realpathSync(tmpdir()), directory = mkdtempSync(join(parent, 'continuer-widget-smoke-'));
   writeFileSync(join(directory, 'widget-preferences.json'), JSON.stringify({ follow: false, hidden: true, expanded }));
-  const trace = join(directory, 'requests.jsonl'), preload = join(directory, 'trace.mjs');
-  writeFileSync(preload, `import http from 'node:https';import {syncBuiltinESMExports} from 'node:module';import {appendFileSync} from 'node:fs';
-    const original=http.createServer;http.createServer=(options,listener)=>original(options,(req,res)=>{appendFileSync(${JSON.stringify(trace)},JSON.stringify(req.url)+'\\n');res.on('finish',()=>appendFileSync(${JSON.stringify(trace + '.responses')},JSON.stringify({path:req.url,status:res.statusCode,authenticated:!!req.headers.authorization})+'\\n'));return listener(req,res)});syncBuiltinESMExports();`);
+  const trace = join(directory, 'requests.jsonl'), preload = new URL('./fixtures/widget-trace.mjs', import.meta.url);
   const probe = createServer(); await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve));
   const port = probe.address().port; await new Promise(resolve => probe.close(resolve));
   const env = { ...process.env, CONTINUER_DATA_DIR: directory, CONTINUER_DEMO: '1', CONTINUER_PORT: String(port), PORT: String(port), ELECTRON_RUN_AS_NODE: undefined };
-  const server = spawn(process.execPath, ['server/index.js', '--demo', '--observe-only'], { env: { ...env, NODE_OPTIONS: `--import=${pathToFileURL(preload).href}` }, windowsHide: true, stdio: 'ignore' });
+  const server = spawn(process.execPath, ['server/index.js', '--demo', '--observe-only'], { env: { ...env, CONTINUER_TEST_TRACE_FILE: trace, NODE_OPTIONS: `--import=${preload.href}` }, windowsHide: true, stdio: 'ignore' });
   const secureFetch = pinnedFetch(directory, true);
   const authenticatedFetch = (url, options = {}) => secureFetch(url, { ...options, headers: { ...options.headers, Authorization: 'Bearer ' + access.readToken(directory, true) } });
   let widget;
@@ -52,6 +50,7 @@ for (const expanded of [false, true]) test(`hidden isolated widget is ready with
     for (let i = 0; clients && i < 25; i++) { await delay(50); clients = (await (await authenticatedFetch(`https://127.0.0.1:${port}/api/health`)).json()).resources.sseClients; }
     assert.equal(clients, 0, 'Hidden widget must release its bootstrap stream');
     const requests = readFileSync(trace, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    assert.ok(requests.includes('/api/health'), 'The trace must record the known health route');
     assert.equal(requests.includes('/api/threads'), false, 'Hidden widgets should not load session lists');
     assert.equal(requests.includes('/rhine-signal-loop.svg'), false, 'Hidden widgets should not load the animation');
     spawn(executable, ['--disable-gpu', 'desktop/main.cjs', '--quit'], { env, windowsHide: true, stdio: 'ignore' }).unref();

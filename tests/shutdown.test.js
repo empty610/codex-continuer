@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtempSync, realpathSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, realpathSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -48,16 +48,16 @@ test('demo exit leaves live markers and the startup watcher alone', async t => {
 
 test('passive reads and automatic opening do not restart an exited app; manual opening clears the latch', t => {
   const dataDir = directory(t); exitState.mark(dataDir);
-  const code = `const localTls=(await import(${JSON.stringify(new URL('../server/local-tls.cjs', import.meta.url).href)})).default;localTls.requestOptions=()=>({});let calls=0;localTls.fetchLocal=async()=>{calls++;throw Error('fixture network failure')};const runtime=await import(${JSON.stringify(new URL('../plugin/runtime.js', import.meta.url).href)});let blocked=0;for(const action of [()=>runtime.ensureService(),()=>runtime.openWidget({automatic:true})])try{await action()}catch(error){if(error.message.includes('已退出'))blocked++}const before=calls;try{await runtime.openWidget()}catch{};console.log(JSON.stringify({blocked,before,after:calls}));`;
-  const result = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '--eval', code], { env: { ...process.env, CONTINUER_DATA_DIR: dataDir, CONTINUER_DEMO: '' }, windowsHide: true, encoding: 'utf8' }));
+  const probe = fileURLToPath(new URL('./fixtures/shutdown-passive.mjs', import.meta.url));
+  const result = JSON.parse(execFileSync(process.execPath, [probe], { env: { ...process.env, CONTINUER_DATA_DIR: dataDir, CONTINUER_DEMO: '' }, windowsHide: true, encoding: 'utf8' }));
   assert.deepEqual(result, { blocked: 2, before: 0, after: 1 }); assert.equal(exitState.requested(dataDir), false);
 });
 
 test('verified force cleanup terminates an owned service tree and refuses unrelated PIDs', { skip: process.platform !== 'win32', timeout: 20000 }, async t => {
   const dataDir = directory(t), root = join(dataDir, 'plugin'); mkdirSync(join(root, 'server'), { recursive: true });
   const script = join(root, 'server/index.js'), childFile = join(dataDir, 'child.json');
-  writeFileSync(script, `const {spawn}=require('node:child_process');const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore',windowsHide:true});require('node:fs').writeFileSync(${JSON.stringify(childFile)},JSON.stringify({pid:child.pid}));setInterval(()=>{},1000);`);
-  const server = spawn(process.execPath, [script], { windowsHide: true, stdio: 'ignore' }), exited = once(server, 'exit');
+  copyFileSync(new URL('./fixtures/shutdown-owned-service.cjs', import.meta.url), script);
+  const server = spawn(process.execPath, [script, childFile], { windowsHide: true, stdio: 'ignore' }), exited = once(server, 'exit');
   let childPid;
   t.after(async () => { if (server.exitCode === null) server.kill(); if (childPid && alive(childPid)) process.kill(childPid); });
   const helper = fileURLToPath(new URL('../plugin/stop-owned.ps1', import.meta.url));
@@ -77,10 +77,10 @@ test('watcher cleanup recognizes quoted --watch arguments used by the startup bo
   const source = join(dataDir, 'watcher.cs'), executable = join(desktop, 'continuer-monitor.exe');
   mkdirSync(join(root, 'plugin'), { recursive: true });
   const launcherPidFile = join(dataDir, 'launcher.json');
-  writeFileSync(join(root, 'plugin/open.js'), `require('node:fs').writeFileSync(${JSON.stringify(launcherPidFile)},JSON.stringify({pid:process.pid}));setInterval(()=>{},1000);`);
+  copyFileSync(new URL('./fixtures/shutdown-owned-launcher.cjs', import.meta.url), join(root, 'plugin/open.js'));
   writeFileSync(source, 'class Watcher { static void Main(string[] args) { var info=new System.Diagnostics.ProcessStartInfo(args[1], "\\\"" + System.IO.Path.Combine(args[2],"plugin/open.js") + "\\\"");info.UseShellExecute=false;info.CreateNoWindow=true;System.Diagnostics.Process.Start(info);System.Threading.Thread.Sleep(-1); } }');
   execFileSync(join(process.env.SystemRoot, 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'), ['/nologo', '/target:winexe', '/out:' + executable, source], { windowsHide: true });
-  const watcher = spawn(executable, ['"--watch"', '"' + process.execPath + '"', '"' + root + '"', '"' + dataDir + '"'], { windowsHide: true, windowsVerbatimArguments: true, stdio: 'ignore' });
+  const watcher = spawn(executable, ['"--watch"', '"' + process.execPath + '"', '"' + root + '"', '"' + dataDir + '"'], { env: { ...process.env, CONTINUER_TEST_LAUNCHER_PID_FILE: launcherPidFile }, windowsHide: true, windowsVerbatimArguments: true, stdio: 'ignore' });
   const exited = once(watcher, 'exit'); writeFileSync(join(dataDir, 'autostart-status.json'), JSON.stringify({ pid: watcher.pid, pluginRoot: root }));
   let launcherPid;
   try {

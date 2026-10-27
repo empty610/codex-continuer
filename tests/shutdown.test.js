@@ -12,7 +12,7 @@ import { stopBackground } from '../plugin/shutdown.js';
 import { alive } from '../server/health.js';
 import exitState from '../server/exit-state.cjs';
 
-function directory(t) { const parent = realpathSync(tmpdir()), dir = mkdtempSync(join(parent, 'continuer-exit-')); t.after(() => { assert.equal(dirname(realpathSync(dir)), parent); rmSync(dir, { recursive: true, force: true }); }); return dir; }
+function directory(t) { const parent = realpathSync.native(tmpdir()), dir = mkdtempSync(join(parent, 'continuer-exit-')); t.after(() => { assert.equal(dirname(realpathSync.native(dir)), parent); rmSync(dir, { recursive: true, force: true }); }); return dir; }
 function fixture(t) {
   const dataDir = directory(t), root = join(dataDir, 'plugin'), calls = []; let running = true;
   writeFileSync(join(dataDir, 'service.lock'), JSON.stringify({ pid: 123 }));

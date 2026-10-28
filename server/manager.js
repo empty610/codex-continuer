@@ -30,7 +30,7 @@ export class Manager extends EventEmitter {
     this.wakeExecutions = new Map(); this.detailVersions = new WeakMap();
     try { this.state = store.load(); }
     catch (error) { this.persistence = { status: 'error', message: error.message, needsRestore: true }; }
-    this.state ||= { settings: { enabled: !this.persistence.needsRestore, pollSeconds: 30, minimumRemaining: 5, maxRounds: 20, maxWakeSends: 20 }, tasks: [], logs: [], history: [] };
+    this.state ||= { settings: { enabled: !this.persistence.needsRestore, language: 'zh', pollSeconds: 30, minimumRemaining: 5, maxRounds: 20, maxWakeSends: 20 }, tasks: [], logs: [], history: [] };
     this.connection = { status: 'disconnected', message: '正在连接本机 Codex…' };
     this.quota = null;
     this.sampledAt = null;
@@ -119,7 +119,7 @@ export class Manager extends EventEmitter {
   taskSnapshot(id) {
     const task = typeof id === 'object' ? id : this.state.tasks.find(t => t.id === id);
     if (!task) return null;
-    const fields = ['name', 'prompt', 'note', 'output', 'outputTruncated', 'plan', 'outcome', 'cwd', 'activity', 'toolCount', 'lastError', 'turnId'];
+    const fields = ['name', 'prompt', 'note', 'continuationMessage', 'output', 'outputTruncated', 'plan', 'outcome', 'cwd', 'activity', 'toolCount', 'lastError', 'turnId'];
     const values = fields.map(key => task[key]);
     const previous = this.detailVersions.get(task);
     if (!previous || values.some((value, index) => value !== previous.values[index])) this.detailVersions.set(task, { values, revision: (previous?.revision || 0) + 1 });
@@ -549,23 +549,26 @@ export class Manager extends EventEmitter {
   }
   updateSettings(input) {
     const s = this.state.settings;
+    if (input.language !== undefined && !['zh', 'en'].includes(input.language)) throw new ClientError('Invalid language: use zh or en');
     if (input.enabled !== undefined && typeof input.enabled !== 'boolean') throw new ClientError('开关值无效');
     for (const [key, min, max] of [['pollSeconds', 10, MAX_POLL_SECONDS], ['minimumRemaining', 1, 99], ['maxRounds', 1, 100], ['maxWakeSends', 1, 100]]) {
       if (input[key] !== undefined) { if (!Number.isInteger(input[key]) || input[key] < min || input[key] > max) throw new ClientError(`${key} 必须为 ${min}–${max} 的整数`); }
     }
     for (const key of ['pollSeconds', 'minimumRemaining', 'maxRounds', 'maxWakeSends']) if (input[key] !== undefined) s[key] = input[key];
     if (input.enabled !== undefined) s.enabled = input.enabled;
+    if (input.language !== undefined) s.language = input.language;
     if (input.enabled === false) this.scheduleEpoch++;
     for (const task of this.state.tasks) if (task.mode === 'quota-wake') enforceWakeLimit(task, s.maxWakeSends);
     this.log('调度设置已更新'); this.changed();
     if (input.enabled === true) this.activate();
   }
   async listThreads(cursor = null) { await this.rpc.connect?.(); return this.rpc.call('thread/list', { limit: 30, sortKey: 'updated_at', cursor }); }
-  async importThread(id, note = '') {
+  async importThread(id, note = '', continuationMessage = '') {
     if (this.state.tasks.some(t => t.threadId === id)) throw new ClientError('该会话已添加');
     if (this.importingThreads.has(id)) throw new ClientError('该会话正在添加，请勿重复导入');
     if (this.state.tasks.length >= 100) throw new ClientError('最多管理 100 条记录，请先结束不再需要的工作');
     if (typeof note !== 'string' || note.length > 12000) throw new ClientError('监测备注必须为不超过 12000 字符的文本');
+    if (typeof continuationMessage !== 'string' || continuationMessage.length > 12000) throw new ClientError('续作消息必须为不超过 12000 字符的文本');
     // Reserve before yielding: HTTP and MCP imports share this manager.
     this.importingThreads.add(id);
     try {
@@ -573,7 +576,7 @@ export class Manager extends EventEmitter {
       // Another task path may have claimed the thread while the read was pending.
       if (this.state.tasks.some(t => t.threadId === id)) throw new ClientError('该会话已添加');
       if (this.state.tasks.length >= 100) throw new ClientError('最多管理 100 条记录，请先结束不再需要的工作');
-      const task = { id: randomUUID(), mode: 'quota-wake', threadId: id, name: (thread.name || thread.preview || 'Codex 会话').slice(0, 80), cwd: thread.cwd, note: note.trim(), continuous: false, status: 'paused', activity: '会话已添加，开启额度监测后在恢复时发送“继续”；工作结果请在原聊天确认', sentCount: 0, wake: { armed: false, delivery: 'idle' }, plan: [], output: '', createdAt: Date.now(), updatedAt: Date.now() };
+      const task = { id: randomUUID(), mode: 'quota-wake', threadId: id, name: (thread.name || thread.preview || 'Codex 会话').slice(0, 80), cwd: thread.cwd, note: note.trim(), continuationMessage: continuationMessage.trim(), continuous: false, status: 'paused', activity: '会话已添加，开启额度监测后在恢复时发送续作消息；工作结果请在原聊天确认', sentCount: 0, wake: { armed: false, delivery: 'idle' }, plan: [], output: '', createdAt: Date.now(), updatedAt: Date.now() };
       this.state.tasks.unshift(task); this.log(`已添加会话：${task.name}`); this.changed(); return task;
     } finally { this.importingThreads.delete(id); }
   }

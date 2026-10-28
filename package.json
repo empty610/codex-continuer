@@ -1,6 +1,6 @@
 {
   "name": "codex-continuer",
-  "version": "0.4.1-preview",
+  "version": "0.5.0-preview",
   "private": true,
   "type": "module",
   "description": "Local Codex quota monitor and resumable task manager",

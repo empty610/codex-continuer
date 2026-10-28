@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { defaultContinuation } from '../public/i18n.js';
 
 export function queueBinary(env = process.env) {
   if (env.CODEX_QUEUE_BINARY) return env.CODEX_QUEUE_BINARY;
@@ -28,7 +29,11 @@ function execute(binary, args) {
 // Official queue command: no thread/resume, model override or approval override.
 export class QueueSender {
   constructor({ binary, run = execute } = {}) { this.binary = binary || queueBinary(); this.run = run; }
-  async send(threadId, { shouldSend = () => true } = {}) {
+  async send(threadId, { shouldSend = () => true, message = '', language = 'zh' } = {}) {
+    if (typeof message !== 'string' || message.length > 12000) {
+      throw Object.assign(new Error('续作消息必须为不超过 12000 字符的文本'), { safeToRetry: false });
+    }
+    message = message.trim() || defaultContinuation(language);
     if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(threadId)) {
       throw Object.assign(new Error('原聊天 ID 无效'), { safeToRetry: false });
     }
@@ -36,7 +41,7 @@ export class QueueSender {
     catch { throw Object.assign(new Error('Codex 消息队列不可用，请更新桌面端或设置 CODEX_QUEUE_BINARY'), { safeToRetry: true }); }
     if (!shouldSend()) throw Object.assign(new Error('已暂停，未发送续作消息'), { cancelled: true, safeToRetry: true });
     try {
-      const output = await this.run(this.binary, ['queue', '--thread', threadId, '--message', '继续']);
+      const output = await this.run(this.binary, ['queue', '--thread', threadId, '--message', message]);
       const queueId = /Queued message ([0-9a-f-]{36})/i.exec(String(output))?.[1];
       return { queueId: queueId || null };
     } catch (error) {

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createPointerDrag } from '../desktop/pointer-drag.cjs';
-import { placeIndependent, samePlacementContext } from '../desktop/geometry.cjs';
+import { placeIndependent, samePlacementContext, expandFromCard } from '../desktop/geometry.cjs';
 
 function fixture() {
   let cursor={x:800,y:400}, bounds={x:720,y:320,width:161,height:160}, tick;
@@ -136,4 +136,13 @@ test('manual drop stays authoritative until an actual placement context change',
   const following={...drop,follow:true};
   assert.equal(samePlacementContext(following,{...following,anchor:{...following.anchor}}),true);
   assert.equal(samePlacementContext(following,{...following,anchor:{...following.anchor,x:1}}),false);
+});
+
+test('panel expansion preserves the card corner that has room on its current display',()=>{
+  const work={x:0,y:0,width:1920,height:1080},size={width:432,height:720};
+  assert.deepEqual(expandFromCard({x:1300,y:100,width:160,height:160},work,size),{x:1028,y:100,...size});
+  assert.deepEqual(expandFromCard({x:50,y:850,width:160,height:160},work,size),{x:50,y:290,...size});
+  assert.deepEqual(expandFromCard({x:1300,y:850,width:160,height:160},work,size),{x:1028,y:290,...size});
+  assert.deepEqual(expandFromCard({x:-1250,y:80,width:160,height:160},{x:-1280,y:0,width:1280,height:800},size),{x:-1250,y:80,...size});
+  assert.deepEqual(expandFromCard({x:100,y:30,width:160,height:160},{x:0,y:0,width:360,height:600},size),{x:0,y:0,width:360,height:600});
 });

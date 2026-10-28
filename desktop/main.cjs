@@ -3,7 +3,7 @@ const { spawn } = require('node:child_process');
 const { createInterface } = require('node:readline');
 const { join } = require('node:path');
 const { readFileSync, writeFileSync, mkdirSync, existsSync } = require('node:fs');
-const { place, placeIndependent, offsetFrom, sizes, compactSize, samePlacementContext, restoreModePosition } = require('./geometry.cjs');
+const { place, placeIndependent, expandFromCard, offsetFrom, sizes, compactSize, samePlacementContext, restoreModePosition } = require('./geometry.cjs');
 const { createPointerDrag } = require('./pointer-drag.cjs');
 const runtimeConfig = require('../server/config.cjs');
 const logging = require('../server/logging.cjs');
@@ -18,12 +18,13 @@ const preferenceFile = join(dataDir, 'widget-preferences.json');
 let prefs = { follow: true, expanded: false, hidden: false, compactSize: 256, offsets: {}, positions: {} };
 try { prefs = { ...prefs, ...JSON.parse(readFileSync(preferenceFile, 'utf8')) }; } catch {}
 let preferenceError = null;
+let nativeText = text => text, refreshMenu = () => {};
 const save = () => { try { writeFileSync(preferenceFile, JSON.stringify(prefs)); preferenceError = null; } catch (error) { preferenceError = error.message; console.error(`挂件设置未保存：${error.message}`); } };
 const port = runtimeConfig.port;
 const origin = `https://127.0.0.1:${port}`;
 let win, tray, widgetMenu, tracker, anchor, pointerDrag, isReady = false, targetVisible = false, closing = false, lastDiagnostic, lastSentState, menuOpen = false, dragging = false, boundsTimer;
 let panelSize = { width: sizes.expanded.width - 18, height: sizes.expanded.height - 18 };
-let settledPlacement, restoringMode=false;
+let settledPlacement, restoringMode=false, expansionOrigin=null;
 let pendingTransition, transitionSequence=0, renderedExpanded=prefs.expanded;
 const mode = () => prefs.expanded ? 'expanded' : 'compact';
 const placementContext = () => ({ mode:mode(),follow:prefs.follow,compactSize:compactSize(prefs.compactSize),anchor:anchor ? {...anchor} : null });
@@ -39,7 +40,7 @@ if (!ownsInstance) { app.quit(); }
 else if (process.argv.includes('--quit')) { app.whenReady().then(quitAll); }
 else {
   app.on('second-instance', (_event, argv) => { if (argv.includes('--quit')) { void quitAll(); return; } if (closing) return; prefs.hidden = false; if (!argv.includes('--auto')) changeExpanded(true); save(); show(!argv.includes('--auto')); });
-  app.whenReady().then(start).catch(error => { dialog.showErrorBox('Continuer 启动失败', error.message); app.quit(); });
+  app.whenReady().then(start).catch(error => { dialog.showErrorBox(nativeText('Continuer 启动失败'), error.message); app.quit(); });
 }
 function quitAll() {
   if (quitting) return quitting;
@@ -80,7 +81,17 @@ function position(animate = false) {
   // it, or reinterpret it on an unchanged tracker tick.
   if (samePlacementContext(settledPlacement,placementContext())) return;
   const positionedContext=placementContext();
-  const settle = () => { restoringMode=false; settledPlacement=positionedContext; };
+  const fromCard = restoringMode && prefs.expanded && expansionOrigin;
+  const settle = () => {
+    if (fromCard) {
+      const bounds = win.getBounds();
+      prefs.positions.expanded = bounds;
+      if (prefs.follow && anchor) prefs.offsets.expanded = offsetFrom(anchor,bounds);
+      expansionOrigin = null;
+      save();
+    }
+    restoringMode=false; settledPlacement=fromCard ? placementContext() : positionedContext;
+  };
   const current = win.getBounds();
   const saved = prefs.positions[mode()];
   const following = prefs.follow && anchor;
@@ -88,11 +99,11 @@ function position(animate = false) {
   const size = prefs.expanded ? sizes.expanded : { width: compactSize(prefs.compactSize), height: compactSize(prefs.compactSize) };
   const offset = prefs.follow && anchor ? (prefs.offsets[mode()] || prefs.offsets[prefs.expanded ? 'compact' : 'expanded']) : undefined;
   const desired = { x: target.x + target.width - size.width - (offset?.right ?? 16), y: target.y + target.height - size.height - (offset?.bottom ?? 16), ...size };
-  const display = screen.getDisplayMatching(desired);
+  const display = screen.getDisplayMatching(fromCard || desired);
   panelSize = { width: Math.min(sizes.expanded.width,display.workArea.width)-18, height: Math.min(sizes.expanded.height,display.workArea.height)-18 };
   if (!prefs.expanded) size.width=size.height=Math.min(size.width,display.workArea.width,display.workArea.height);
-  let next = following ? place(target, display.workArea, size, offset) : placeIndependent(saved,current,display.workArea,size);
-  if (restoringMode) {
+  let next = fromCard ? expandFromCard(fromCard,display.workArea,size) : following ? place(target, display.workArea, size, offset) : placeIndependent(saved,current,display.workArea,size);
+  if (restoringMode && !fromCard) {
     const remembered=following ? (prefs.offsets[mode()] ? {x:target.x+target.width-next.width-offset.right,y:target.y+target.height-next.height-offset.bottom} : null) : saved;
     next=restoreModePosition(next,remembered,display.workArea);
   }
@@ -139,14 +150,18 @@ function finishDrag() {
 function changeExpanded(expanded) {
   if (prefs.expanded === expanded) return;
   pointerDrag?.finish();
+  let origin = null;
   // Record the departing mode only after its layout has settled. Never save
   // an intermediate animation rectangle as a compact or expanded position.
   if (isReady && win && !win.isDestroyed() && !boundsTimer && !dragging) {
     const bounds=win.getBounds();
-    const size=prefs.expanded ? sizes.expanded : {width:compactSize(prefs.compactSize),height:compactSize(prefs.compactSize)};
-    if (bounds.width<=size.width+2 && bounds.height<=size.height+2) {
+    // Native dimensions can differ by several DIP during a display/DPI change.
+    // The committed view mode, rather than a size tolerance, tells us whether
+    // these are the departing mode's settled bounds.
+    if (renderedExpanded === prefs.expanded) {
       prefs.positions[mode()]=bounds;
       if (prefs.follow && anchor) prefs.offsets[mode()]=offsetFrom(anchor,bounds);
+      if (!prefs.expanded && !renderedExpanded) origin = bounds;
     }
   }
   // A remembered compact drop must not suppress a later expanded -> compact
@@ -154,6 +169,7 @@ function changeExpanded(expanded) {
   cancelTransition();
   settledPlacement=null;
   restoringMode=true;
+  expansionOrigin=expanded ? origin : null;
   dragging=false;
   prefs.expanded=expanded;
 }
@@ -191,6 +207,8 @@ function syncTracker() {
   child.on('exit', ended);
 }
 async function start() {
+  const { interfaceText } = await import('../public/i18n.js');
+  nativeText = text => interfaceText(text, prefs.language || 'zh');
   const runtime = await import('../plugin/runtime.js');
   await runtime.ensureService();
   const display = screen.getPrimaryDisplay().workArea;
@@ -236,6 +254,7 @@ async function start() {
   const allowed = event => event.sender === win.webContents && event.senderFrame.url === origin + '/widget';
   ipcMain.handle('continuer:control', (event, action, value) => {
     if (!allowed(event)) throw new Error('Untrusted widget request');
+    if (action === 'language' && ['zh', 'en'].includes(value)) { if (prefs.language !== value) { prefs.language = value; save(); refreshMenu(); } return state(); }
     if (action === 'renderer-ready') { isReady = true; show(); return state(); }
     if (action === 'quit') { setImmediate(() => { void quitAll(); }); return { quitting: true }; }
     if (action === 'transition-ready') { finishTransition(value); return state(); }
@@ -256,28 +275,31 @@ async function start() {
   });
   ipcMain.handle('continuer:pick-directory', async event => {
     if (!allowed(event)) throw new Error('Untrusted widget request');
-    const result = await dialog.showOpenDialog(win, { properties: ['openDirectory'], title: '选择工作项目目录' });
+    const result = await dialog.showOpenDialog(win, { properties: ['openDirectory'], title: nativeText('选择工作项目目录') });
     return result.canceled ? null : result.filePaths[0];
   });
   tray = new Tray(nativeImage.createFromPath(join(__dirname, 'icon.png')));
-  tray.setToolTip('Codex Continuer · 额度与持续工作');
   const reveal = () => { prefs.hidden = false; changeExpanded(true); save(); show(true,true); };
-  widgetMenu = Menu.buildFromTemplate([
-    { label: '打开额度与工作面板', click: reveal },
-    { label: '跟随 Codex 窗口', click: () => { prefs.follow = true; prefs.hidden = false; syncTracker(); save(); show(); } },
-    { label: '独立显示面板', click: () => { prefs.follow = false; syncTracker(); reveal(); } },
-    { label: '重置挂件位置', click: () => { settledPlacement=null; prefs.offsets = {}; prefs.positions = {}; save(); show(true); } },
-    { type: 'separator' },
-    { label: '隐藏到托盘', click: () => { prefs.hidden = true; save(); show(); } },
-    { label: '退出 Continuer', click: () => { void quitAll(); } },
-  ]);
+  refreshMenu = () => {
+    tray.setToolTip(nativeText('Codex Continuer · 额度与持续工作'));
+    widgetMenu = Menu.buildFromTemplate([
+      { label: nativeText('打开额度与工作面板'), click: reveal },
+      { label: nativeText('跟随 Codex 窗口'), click: () => { prefs.follow = true; prefs.hidden = false; syncTracker(); save(); show(); } },
+      { label: nativeText('独立显示面板'), click: () => { prefs.follow = false; syncTracker(); reveal(); } },
+      { label: nativeText('重置挂件位置'), click: () => { settledPlacement=null; prefs.offsets = {}; prefs.positions = {}; save(); show(true); } },
+      { type: 'separator' },
+      { label: nativeText('隐藏到托盘'), click: () => { prefs.hidden = true; save(); show(); } },
+      { label: nativeText('退出 Continuer'), click: () => { void quitAll(); } },
+    ]);
+    tray.setContextMenu(widgetMenu);
+  };
+  refreshMenu();
   const popupMenu = () => {
     if (menuOpen) return;
     pointerDrag.finish();
     menuOpen = true;
     widgetMenu.popup({ window: win, callback: () => { menuOpen = false; } });
   };
-  tray.setContextMenu(widgetMenu);
   win.webContents.on('context-menu', (_event,params) => { if (!params.isEditable) popupMenu(); });
   win.on('system-context-menu', event => { event.preventDefault(); popupMenu(); });
   tray.on('click', reveal);

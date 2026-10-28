@@ -10,12 +10,13 @@ const windowSummary = value => value && pick(value, ['usedPercent', 'windowDurat
 export function compactSummary(snapshot) {
   const result = {
     ...pick(snapshot, ['app', 'version', 'buildId', 'protocolVersion', 'schemaVersion', 'sampledAt', 'demo', 'observationOnly']),
-    settings: pick(snapshot.settings, ['enabled', 'pollSeconds', 'minimumRemaining', 'maxRounds', 'maxWakeSends']),
+    settings: pick(snapshot.settings, ['enabled', 'language', 'pollSeconds', 'minimumRemaining', 'maxRounds', 'maxWakeSends']),
     persistence: { ...pick(snapshot.persistence, ['status', 'needsRestore', 'pending', 'failedAt', 'backupAvailable']), message: text(snapshot.persistence?.message, 2000), loadError: text(snapshot.persistence?.loadError, 2000) },
     connection: { status: snapshot.connection?.status, message: text(snapshot.connection?.message, 2000) },
     tasks: snapshot.tasks.map(task => ({
       ...pick(task, ['id', 'mode', 'name', 'threadId', 'status', 'continuous', 'rounds', 'sentCount', 'waitReason', 'retryAt', 'createdAt', 'updatedAt', 'progress', 'detailRevision']),
       cwd: text(task.cwd, 256), activity: text(task.activity, 240),
+      ...(task.mode === 'quota-wake' ? { notePreview: text(task.note || '', 500), noteTruncated: (task.note?.length || 0) > 500 } : {}),
       ...(task.wake ? { wake: pick(task.wake, ['armed', 'delivery', 'episodeId', 'exhaustedAt', 'sentAt', 'queueId']) } : {}),
     })),
     approvals: snapshot.approvals.map(item => ({ ...pick(item, ['id', 'taskId', 'method', 'detailToken']), requiresDetails: (item.reason?.length || 0) > 240 || (item.command?.length || 0) > 1000 || (item.cwd?.length || 0) > 256, reason: text(item.reason, 240), command: text(item.command, 1000), cwd: text(item.cwd, 256) })),

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { buckets, quotaAvailable, QUOTA_TTL_MS } from './policy.js';
+import { defaultContinuation } from '../public/i18n.js';
 
 export function enforceWakeLimit(task, limit) {
   if ((task.sentCount || 0) < limit) return false;
@@ -23,7 +24,7 @@ export function resetWake(task) {
   task.wake = { armed: false, delivery: 'idle' };
   task.status = task.continuous ? 'monitoring' : 'paused';
   task.waitReason = null; task.retryAt = 0;
-  task.activity = task.continuous ? '正在监测额度；确认耗尽后，恢复时向原聊天发送“继续”' : '额度恢复续作已暂停';
+  task.activity = task.continuous ? '正在监测额度；确认耗尽后，恢复时向原聊天发送续作消息' : '额度恢复续作已暂停';
 }
 
 export async function tickQuotaWake(manager, epoch = manager.scheduleEpoch) {
@@ -38,7 +39,7 @@ export async function tickQuotaWake(manager, epoch = manager.scheduleEpoch) {
       if (!wake.armed) {
         Object.assign(wake, { armed: true, episodeId: randomUUID(), exhaustedAt: now, delivery: 'pending' });
         task.status = 'waiting'; task.waitReason = 'quota'; task.retryAt = 0;
-        task.activity = '已确认额度耗尽，恢复后向原聊天发送一次“继续”';
+        task.activity = '已确认额度耗尽，恢复后向原聊天发送一次续作消息';
         manager.log(`${task.name}：${task.activity}`, 'info', task.id); manager.changed();
       }
       continue;
@@ -51,14 +52,14 @@ export async function tickQuotaWake(manager, epoch = manager.scheduleEpoch) {
     manager.wakeExecutions.set(task.id, wake);
     try {
       // Durable outbox claim before the side effect. A restart leaves this uncertain.
-      wake.delivery = 'sending'; task.activity = '额度已恢复，正在向原聊天发送“继续”'; manager.changed();
+      wake.delivery = 'sending'; task.activity = '额度已恢复，正在向原聊天发送续作消息'; manager.changed();
       try {
-        const result = await manager.wakeSender.send(task.threadId, { shouldSend: () => manager.canSchedule(epoch) && task.continuous === true && task.status !== 'paused' && task.wake === wake && manager.state.tasks.includes(task) && (task.sentCount || 0) < manager.state.settings.maxWakeSends && quotaAvailable(manager.wakeQuota, manager.wakeSampledAt, manager.state.settings.minimumRemaining) });
+        const result = await manager.wakeSender.send(task.threadId, { message: task.continuationMessage?.trim() || defaultContinuation(manager.state.settings.language), shouldSend: () => manager.canSchedule(epoch) && task.continuous === true && task.status !== 'paused' && task.wake === wake && manager.state.tasks.includes(task) && (task.sentCount || 0) < manager.state.settings.maxWakeSends && quotaAvailable(manager.wakeQuota, manager.wakeSampledAt, manager.state.settings.minimumRemaining) });
         Object.assign(wake, { armed: false, delivery: 'sent', sentAt: Date.now(), queueId: result?.queueId || null });
         task.sentCount = (task.sentCount || 0) + 1;
         // A user may pause while the queue command is in flight; don't undo it.
         if (task.continuous && task.status !== 'paused') { task.status = 'monitoring'; task.waitReason = null; }
-        task.activity = task.continuous ? '已向原聊天排队发送“继续”，继续监测；工作结果请在原聊天确认' : '已向原聊天排队发送“继续”，监测已暂停；已排队消息无法撤回';
+        task.activity = task.continuous ? '已向原聊天排队发送续作消息，继续监测；工作结果请在原聊天确认' : '已向原聊天排队发送续作消息，监测已暂停；已排队消息无法撤回';
         enforceWakeLimit(task, manager.state.settings.maxWakeSends);
         manager.log(`${task.name}：${task.activity}`, 'success', task.id);
       } catch (error) {

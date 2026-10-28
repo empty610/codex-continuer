@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "codex-continuer",
-  "version": "0.4.1-preview",
+  "version": "0.5.0-preview",
   "description": "Windows 预览版：Codex 额度监测、原聊天接续与任务管理",
   "extensions": {
     "com.openai": {

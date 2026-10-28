@@ -15,7 +15,7 @@ export function createApiRouter({ manager, health, stream, rpc, demo, summary, s
     ['/api/tasks', input => manager.create(input)],
     ['/api/import', input => {
       if (input.note !== undefined && input.prompt !== undefined) throw new ClientError('请仅提供监测备注 note；prompt 为旧版兼容字段');
-      return manager.importThread(input.threadId, input.note ?? input.prompt);
+      return manager.importThread(input.threadId, input.note ?? input.prompt, input.continuationMessage);
     }],
     ['/api/approval', input => manager.approve(input.id, input.decision, input.token)],
   ]);

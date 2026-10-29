@@ -4,7 +4,13 @@ import { createHash } from 'node:crypto';
 
 const files = new Map([
   ['/', 'index.html'], ['/widget', 'widget.html'],
-  ...['app.js', 'widget.js', 'access.js', 'view-lifecycle.js', 'task-mode.js', 'task-details.js', 'approval-details.js', 'storage-status.js', 'quota-display.js', 'rhine-readout.js', 'style.css', 'widget.css', 'favicon.svg', 'rhine-signal-loop.svg'].map(file => ['/' + file, file]),
+  ...[
+    'app.js', 'widget.js', 'i18n.js', 'messages.js', 'message.js', 'system-messages.js', 'access.js', 'api-client.js',
+    'html.js', 'icons.js', 'task-view.js', 'task-forms.js', 'view-lifecycle.js',
+    'task-mode.js', 'task-details.js', 'approval-details.js', 'storage-status.js',
+    'quota-display.js', 'rhine-readout.js', 'style.css', 'widget.css',
+    'favicon.svg', 'rhine-signal-loop.svg',
+  ].map(file => ['/' + file, file]),
 ]);
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
 

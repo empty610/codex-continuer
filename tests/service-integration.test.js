@@ -28,6 +28,7 @@ async function service(t, { corrupt = false } = {}) {
     import { appendFileSync } from 'node:fs';
     import { CodexRpc } from ${JSON.stringify(new URL('../server/rpc.js', import.meta.url).href)};
     import { QueueSender } from ${JSON.stringify(new URL('../server/queue-sender.js', import.meta.url).href)};
+    import { interruptedThread } from ${JSON.stringify(new URL('./fixtures/thread-history.js', import.meta.url).href)};
     const record = method => appendFileSync(${JSON.stringify(callsFile)}, JSON.stringify({method}) + '\\n');
     CodexRpc.prototype.connect = async function() { this.ready = true; };
     CodexRpc.prototype.call = async function(method, params) {
@@ -39,7 +40,7 @@ async function service(t, { corrupt = false } = {}) {
         return {turn:{id:'fixture-turn'}};
       }
       if (method === 'turn/interrupt') this.emit('notification',{method:'turn/completed',params:{threadId:params.threadId,turn:{id:params.turnId,status:'interrupted'}}});
-      return {thread:{id:params?.threadId,status:{type:'idle'}}};
+      return {thread:interruptedThread(params?.threadId)};
     };
     CodexRpc.prototype.close = function() { this.ready = false; };
     CodexRpc.prototype.send = function() { record('fixture/approval'); };

@@ -1,4 +1,5 @@
 import { outcomeSummary } from './output.js';
+import { message, formatMessage } from '../public/message.js';
 export const QUOTA_TTL_MS = 90000;
 export const MAX_POLL_SECONDS = QUOTA_TTL_MS / 1000;
 
@@ -37,5 +38,6 @@ export function parseOutcome(text) {
     const value = JSON.parse(text);
     if (['done', 'continue', 'blocked'].includes(value?.status) && typeof value.summary === 'string') return { status: value.status, summary: outcomeSummary(value.summary) };
   } catch { /* Missing structured outcome must not trigger an endless loop. */ }
-  return { status: 'blocked', summary: '本轮已结束，未收到明确的完成状态，请检查输出后继续。' };
+  const summaryMessage = message('task.outcome_missing');
+  return { status: 'blocked', summary: formatMessage(summaryMessage), summaryMessage };
 }

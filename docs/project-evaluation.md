@@ -46,7 +46,7 @@ Continuer 已经具备个人日常使用的完整功能闭环：查看额度、�
 | --- | --- | --- |
 | 创建方式 | 新建工作 | 导入已有聊天 |
 | 执行端 | Continuer 自己的 `codex app-server` | 原聊天的桌面执行端 |
-| 接续方式 | `thread/start/resume`、`turn/start` | CLI 队列发送固定消息“继续” |
+| 接续方式 | `thread/start/resume`、`turn/start` | CLI 队列发送自定义续作消息，留空发送“继续”（0.5.0-preview） |
 | 启动条件 | 开启调度、任务排队、真实额度达标 | 先观察到额度耗尽，再观察到恢复且达标 |
 | 用户输入 | 目标进入实际执行提示词 | 可选本地监测备注，不发送 |
 | 上限 | maxRounds，直接执行轮次 | maxWakeSends，每条记录累计确认排队次数 |

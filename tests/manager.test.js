@@ -129,6 +129,7 @@ test('active-thread wait retries once idle without starting while it is active',
 
 test('restart migrates only continuous tasks blocked by the exact legacy writer-conflict error to quota monitoring',()=>{
   const {m}=setup();const t=m.create(task);t.threadId='external';
+  delete t.mode; // A persisted record from before explicit direct task modes.
   t.status='blocked';t.activity='thread external already has an active writer';
   const restored=setup(m.state).m.state.tasks[0];
   assert.equal(restored.status,'monitoring');assert.equal(restored.mode,'quota-wake');assert.equal(restored.wake.armed,false);assert.equal(restored.sentCount,0);

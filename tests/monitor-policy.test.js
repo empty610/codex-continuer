@@ -5,13 +5,14 @@ import { Manager } from '../server/manager.js';
 import { quotaAvailable, MAX_POLL_SECONDS } from '../server/policy.js';
 import { validate, tools, dispatch } from '../plugin/tools.js';
 import { taskMode, wakeExplanation } from '../public/task-mode.js';
+import { interruptedThread } from './fixtures/thread-history.js';
 
 const threadId = '11111111-1111-4111-8111-111111111111';
 const quota = usedPercent => ({ rateLimits: { primary: { usedPercent } } });
 function fixture(saved, send) {
   const rpc = new EventEmitter(), saves = [], sent = [];
   rpc.ready = true; rpc.close = () => {}; rpc.connect = async () => {};
-  rpc.call = async (method, params) => method === 'account/rateLimits/read' ? quota(0) : { thread: { id: params?.threadId, name: 'Original', cwd: 'E:\\fixture' } };
+  rpc.call = async (method, params) => method === 'account/rateLimits/read' ? quota(0) : { thread: interruptedThread(params?.threadId) };
   const m = new Manager(rpc, { load: () => saved && structuredClone(saved), save: state => saves.push(structuredClone(state)) }, { demo: true, wakeSender: { send: send || (async id => { sent.push(id); return { queueId: 'fixture' }; }) } });
   m.connection.status = 'connected';
   const cycle = async () => { m.setQuota(quota(100)); await m.tick(); m.setQuota(quota(0)); await m.tick(); };
@@ -98,27 +99,31 @@ test('lowering a send limit cancels an armed recovery immediately', async () => 
 });
 
 test('preflight rechecks the current cap before queueing and cancellation does not count', async () => {
-  let release, check;
+  let release, check, entered;
+  const started = new Promise(resolve => { entered = resolve; });
   const f = fixture(null, async (_id, { shouldSend }) => {
-    check = shouldSend; await new Promise(resolve => { release = resolve; });
+    check = shouldSend; entered(); await new Promise(resolve => { release = resolve; });
     if (!shouldSend()) throw Object.assign(new Error('cancelled before queue'), { cancelled: true });
     return {};
   });
   const task = await f.m.importThread(threadId); task.sentCount = 1; await f.m.action(task.id, 'resume');
   f.m.setQuota(quota(100)); await f.m.tick(); f.m.setQuota(quota(0)); const pending = f.m.tick();
+  await started;
   assert.equal(check(), true); f.m.updateSettings({ maxWakeSends: 1 }); assert.equal(check(), false);
   release(); await pending; assert.equal(task.sentCount, 1); assert.equal(task.status, 'paused');
 });
 
 test('quota must remain fresh before the queue side effect', async () => {
-  let release, check;
+  let release, check, entered;
+  const started = new Promise(resolve => { entered = resolve; });
   const f = fixture(null, async (_id, { shouldSend }) => {
-    check = shouldSend; await new Promise(resolve => { release = resolve; });
+    check = shouldSend; entered(); await new Promise(resolve => { release = resolve; });
     if (!shouldSend()) throw Object.assign(new Error('stale quota'), { cancelled: true });
     return {};
   });
   const task = await f.m.importThread(threadId); await f.m.action(task.id, 'resume');
   f.m.setQuota(quota(100)); await f.m.tick(); f.m.setQuota(quota(0)); const pending = f.m.tick();
+  await started;
   f.m.wakeSampledAt -= 90001; assert.equal(check(), false); release(); await pending;
   assert.equal(task.sentCount, 0);
 });
@@ -144,7 +149,7 @@ test('mode presentation distinguishes notes, counters, progress and end-monitori
   assert.equal(wake.complete, '结束监测并移除'); assert.equal(wake.resume, '开启监测'); assert.match(wake.progress, /原聊天/);
   const direct = taskMode({ prompt: 'Real execution goal', rounds: 1 }, settings);
   assert.equal(direct.description, 'Real execution goal'); assert.match(direct.counter, /1 \/ 2 轮/); assert.equal(direct.complete, '标记完成');
-  assert.match(wakeExplanation, /备注不发送/); assert.match(wakeExplanation, /不读取.*完成状态/);
+  assert.match(wakeExplanation, /备注不发送/); assert.match(wakeExplanation, /已有完整回复则跳过/);
 });
 
 test('MCP allows optional notes, rejects ambiguous fields and returns separate send counters privately', async () => {

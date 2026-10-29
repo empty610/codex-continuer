@@ -9,6 +9,11 @@
 | [支持范围](compatibility.md) | Windows x64 预览版、只读诊断、外部版本与尚未完成的验收 |
 | [便携包安装](portable.md) | 二进制包安装、卸载及源码配套要求 |
 | [按需加载与代码结构](loading-and-structure.md) | 隐藏视图停订阅、HTTP 模块拆分、冗余代码与一次性脚本清理；226 项回归 |
+| [Manager 职责拆分](manager-responsibilities.md) | 调度协调、状态保存及 Codex 轮次协议的组件边界 |
+| [两种任务的状态模型](task-models.md) | 多轮工作与额度监测的独立状态、计数、操作和旧数据迁移 |
+| [完整页面与挂件的共享界面](shared-interface.md) | 共用请求、任务状态、卡片、详情和表单，以及界面行为回归 |
+| [消息标识与模块测试入口](message-contracts.md) | 固定消息标识、兼容字段、旧文本处理和正式模块入口测试 |
+| [启动与退出的运行边界](runtime-lifecycle.md) | 共享身份核验、并发启动、就绪等待、退出与手动重开 |
 | [第三轮审查与修复](project-evaluation-round3.md) | 7 类问题已修复，213 项回归通过；授权、在途发送、异步轮次及中文输入 |
 | [第二轮评估](project-evaluation-round2.md) | 6 项缺陷及详情缓存优化已修复，195 项回归通过；保留修复前证据 |
 | [项目评估](project-evaluation.md) | 功能、架构、12 项评估与修复进展、测试及优化路线 |

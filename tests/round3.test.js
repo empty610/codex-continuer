@@ -8,6 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { Manager } from '../server/manager.js';
 import { Store } from '../server/store.js';
 import { readJsonBody } from '../server/http-body.js';
+import { interruptedThread } from './fixtures/thread-history.js';
 
 const threadId = '11111111-1111-4111-8111-111111111111';
 const quota = usedPercent => ({ rateLimits: { primary: { usedPercent }, secondary: { usedPercent: 10 } } });
@@ -23,7 +24,7 @@ function fixture(t, store = { load: () => null, save() {} }, send = async () => 
   rpc.call = async (method, params) => {
     rpc.calls.push({ method, params });
     if (method === 'thread/start') return { thread: { id: threadId } };
-    if (method === 'thread/read') return { thread: { id: params.threadId, name: 'Fixture', cwd: input.cwd, status: { type: 'idle' } } };
+    if (method === 'thread/read') return { thread: interruptedThread(params.threadId, { name: 'Fixture', cwd: input.cwd }) };
     if (method === 'turn/start') return { turn: { id: `turn-${++turn}` } };
     return {};
   };

@@ -1,48 +1,48 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Continuer · Codex 挂件</title><link rel="icon" href="/favicon.svg"><link rel="stylesheet" href="/widget.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title data-i18n="ui.continuer_codex_widget">Continuer · Codex 挂件</title><link rel="icon" href="/favicon.svg"><link rel="stylesheet" href="/widget.css"></head>
 <body>
 <main class="shell">
-  <div id="mini" role="button" tabindex="0" aria-label="展开额度和工作面板" aria-expanded="false" title="点击卡片展开，拖动移动；Ctrl + 滚轮调整大小">
+  <div id="mini" role="button" tabindex="0" aria-label="展开额度和工作面板" aria-expanded="false" title="点击卡片展开，拖动移动；Ctrl + 滚轮调整大小" data-i18n-aria-label="ui.expand_quota_and_work_panel" data-i18n-title="ui.click_to_expand_drag_to_move_ctrl_2">
     <div id="rhine-art" aria-hidden="true"></div>
-    <svg id="gauge-readout" viewBox="0 0 256 256" aria-label="额度与重置倒计时">
-      <g id="quota-readout"><text id="mini-quota" class="quota-number" x="128" y="103" text-anchor="middle">—</text><text class="quota-unit" x="181" y="103">%</text><text id="mini-window" x="128" y="122" text-anchor="middle">五小时可用额度</text><path id="mini-reset-pixels"/><text id="mini-reset" class="reset-fallback" x="128" y="188" text-anchor="middle">待同步</text><text id="mini-reset-label" x="128" y="207" text-anchor="middle">距离重置</text><circle id="quota-dot-primary" cx="122" cy="219" r="2"/><circle id="quota-dot-secondary" cx="134" cy="219" r="2"/></g>
+    <svg id="gauge-readout" viewBox="0 0 256 256" aria-label="额度与重置倒计时" data-i18n-aria-label="ui.quota_and_reset_countdown">
+      <g id="quota-readout"><text id="mini-quota" class="quota-number" x="128" y="103" text-anchor="middle">—</text><text class="quota-unit" x="181" y="103">%</text><text id="mini-window" x="128" y="122" text-anchor="middle" data-i18n="ui.hour_available_quota">五小时可用额度</text><path id="mini-reset-pixels"/><text id="mini-reset" class="reset-fallback" x="128" y="188" text-anchor="middle" data-i18n="ui.waiting_to_sync">待同步</text><text id="mini-reset-label" x="128" y="207" text-anchor="middle" data-i18n="ui.until_reset_2">距离重置</text><circle id="quota-dot-primary" cx="122" cy="219" r="2"/><circle id="quota-dot-secondary" cx="134" cy="219" r="2"/></g>
       <circle cx="128" cy="128" r="106" fill="url(#rhine-signal-scanlines)"/>
     </svg>
     <span id="mini-open" aria-hidden="true">↗</span>
   </div>
   <section id="panel">
-    <header><div class="rhine-mark" aria-hidden="true"><i></i></div><div class="brand"><strong>CONTINUER<span> / C</span></strong><small>额度监测 · 持续工作</small></div><button data-action="refresh" title="刷新额度" aria-label="刷新额度">↻</button><button id="theme" title="切换主题" aria-label="切换主题">◐</button><button id="collapse" title="收起为仪表" aria-label="收起">−</button><button id="quit" title="退出 Continuer 并停止后台" aria-label="退出 Continuer">×</button></header>
+    <header><div class="rhine-mark" aria-hidden="true"><i></i></div><div class="brand"><strong>CONTINUER<span> / C</span></strong><small data-i18n="ui.quota_monitor_continuous_work">额度监测 · 持续工作</small></div><button data-action="refresh" title="刷新额度" aria-label="刷新额度" data-i18n-title="ui.refresh_quota" data-i18n-aria-label="ui.refresh_quota">↻</button><select id="language" aria-label="切换语言" title="切换语言" data-i18n-aria-label="ui.switch_language" data-i18n-title="ui.switch_language"><option value="zh" data-i18n="ui.language_chinese">中文</option><option value="en">English</option></select><button id="theme" title="切换主题" aria-label="切换主题" data-i18n-title="ui.switch_theme" data-i18n-aria-label="ui.switch_theme">◐</button><button id="collapse" title="收起为仪表" aria-label="收起" data-i18n-title="ui.collapse_to_gauge" data-i18n-aria-label="ui.collapse">−</button><button id="quit" title="退出 Continuer 并停止后台" aria-label="退出 Continuer" data-i18n-title="ui.quit_continuer_and_stop_background_services" data-i18n-aria-label="ui.quit_continuer">×</button></header>
     <div class="scroll">
-      <div class="section-label"><span><em>01</em> 账户额度</span><span id="updated">等待同步</span></div>
+      <div class="section-label"><span data-i18n="ui.account_quota_2"><em>01</em> 账户额度</span><span id="updated" data-i18n="ui.waiting_to_sync_2">等待同步</span></div>
       <div id="quotas" class="quota-grid"></div>
-      <p id="health" class="hint">正在连接本地服务…</p>
+      <p id="health" class="hint" data-i18n="ui.connecting_to_local_service_2">正在连接本地服务…</p>
       <div id="storage-status"></div>
-      <div class="scheduler"><span class="status-beacon" aria-hidden="true"></span><div><strong>自动续作 <span>AUTO CONTINUE</span></strong><small id="scheduler-note">额度恢复后接续工作</small></div><label class="switch"><input id="scheduler" type="checkbox" aria-label="自动调度"><span></span></label></div>
+      <div class="scheduler"><span class="status-beacon" aria-hidden="true"></span><div><strong data-i18n="ui.auto_continue">自动续作 <span>AUTO CONTINUE</span></strong><small id="scheduler-note" data-i18n="ui.resume_work_after_quota_recovery">额度恢复后接续工作</small></div><label class="switch"><input id="scheduler" type="checkbox" aria-label="自动调度" data-i18n-aria-label="ui.scheduling"><span></span></label></div>
       <div id="approvals"></div>
-      <div class="section-label tasks-heading"><span><em>02</em> 我的工作 <b id="count">0</b></span><div><button data-action="sessions-refresh" aria-label="刷新对话列表">↻ 对话</button><button data-action="new">＋ 新建</button></div></div>
+      <div class="section-label tasks-heading"><span data-i18n="ui.my_work_2"><em>02</em> 我的工作 <b id="count">0</b></span><div><button data-action="sessions-refresh" aria-label="刷新对话列表" data-i18n="ui.chats" data-i18n-aria-label="ui.refresh_chats">↻ 对话</button><button data-action="new" data-i18n="ui.new">＋ 新建</button></div></div>
       <div class="session-picker">
-        <label for="session-select">选择 Codex 对话</label>
-        <select id="session-select"><option value="">正在读取已有对话…</option></select>
-        <div id="session-preview" class="hint">按最近更新排序，选择你正在进行的对话。</div>
-        <div class="session-actions"><button id="session-more" data-action="sessions-more" hidden>更多对话</button><button class="primary" id="add-session" data-action="add-session" disabled>加入我的工作</button></div>
+        <label for="session-select" data-i18n="ui.select_a_codex_chat">选择 Codex 对话</label>
+        <select id="session-select"><option value="" data-i18n="ui.loading_chats_2">正在读取已有对话…</option></select>
+        <div id="session-preview" class="hint" data-i18n="ui.choose_a_chat_sorted_by_most_recently">按最近更新排序，选择你正在进行的对话。</div>
+        <div class="session-actions"><button id="session-more" data-action="sessions-more" hidden data-i18n="ui.more_chats">更多对话</button><button class="primary" id="add-session" data-action="add-session" disabled data-i18n="ui.add_to_my_work">加入我的工作</button></div>
       </div>
-      <div id="tasks"><p class="empty">正在读取工作记录…</p></div>
-      <details class="section"><summary>工作策略与显示</summary><form id="settings-form">
-        <label>恢复阈值 <span><input type="number" name="minimumRemaining" min="1" max="99" required> %</span></label>
-        <label>同步周期 <span><input type="number" name="pollSeconds" min="10" max="90" required> 秒</span></label>
-        <label>直接执行轮次上限 <span><input type="number" name="maxRounds" min="1" max="100" required> 轮</span></label>
-        <label>原聊天发送上限 <span><input type="number" name="maxWakeSends" min="1" max="100" required> 次</span></label>
-        <label id="follow-label">跟随 Codex 窗口 <input type="checkbox" id="follow"></label>
-        <label class="size-setting">桌面卡片大小 <span><output id="compact-size-value">256 px</output><input id="compact-size" type="range" min="160" max="420" step="4" value="256" aria-label="桌面卡片大小"></span></label>
-        <button id="reset-position" type="button">重置挂件位置</button>
-        <p class="hint">同步周期为 10–90 秒。直接执行受轮次上限约束；原聊天按每条监测记录累计发送次数，到限停止。暂停、重新开启不会清零；提高上限后需手动开启。原聊天工作是否完成需自行确认。</p><button type="submit">保存策略</button>
+      <div id="tasks"><p class="empty" data-i18n="ui.loading_work">正在读取工作记录…</p></div>
+      <details class="section"><summary data-i18n="ui.policy_and_display">工作策略与显示</summary><form id="settings-form">
+        <label data-i18n="ui.resume_threshold_2">恢复阈值 <span><input type="number" name="minimumRemaining" min="1" max="99" required> %</span></label>
+        <label data-i18n="ui.sync_interval">同步周期 <span data-i18n="ui.sec"><input type="number" name="pollSeconds" min="10" max="90" required> 秒</span></label>
+        <label data-i18n="ui.direct_work_turn_limit_2">直接执行轮次上限 <span data-i18n="ui.turns"><input type="number" name="maxRounds" min="1" max="100" required> 轮</span></label>
+        <label data-i18n="ui.original_chat_message_limit_2">原聊天发送上限 <span data-i18n="ui.messages_2"><input type="number" name="maxWakeSends" min="1" max="100" required> 次</span></label>
+        <label id="follow-label" data-i18n="ui.follow_codex_window">跟随 Codex 窗口 <input type="checkbox" id="follow"></label>
+        <label class="size-setting" data-i18n="ui.widget_size">桌面卡片大小 <span><output id="compact-size-value">256 px</output><input id="compact-size" type="range" min="160" max="420" step="4" value="256" aria-label="桌面卡片大小" data-i18n-aria-label="ui.widget_size_2"></span></label>
+        <button id="reset-position" type="button" data-i18n="ui.reset_widget_position">重置挂件位置</button>
+        <p class="hint" data-i18n="ui.sync_every_seconds_direct_work_has_a">同步周期为 10–90 秒。直接执行受轮次上限约束；原聊天按每条监测记录累计发送次数，到限停止。暂停、重新开启不会清零；提高上限后需手动开启。原聊天工作是否完成需自行确认。</p><button type="submit" data-i18n="ui.save_policy">保存策略</button>
       </form></details>
-      <details class="section"><summary>最近活动</summary><div id="logs"></div></details>
-      <footer><span class="footer-mark">C / CONTINUER</span><span>本机保存 · 后台持续工作</span></footer>
+      <details class="section"><summary data-i18n="ui.recent_activity">最近活动</summary><div id="logs"></div></details>
+      <footer><span class="footer-mark">C / CONTINUER</span><span data-i18n="ui.saved_locally_runs_in_background">本机保存 · 后台持续工作</span></footer>
     </div>
   </section>
 </main>
-<dialog id="modal"><div class="modal-head"><strong id="modal-title"></strong><button id="close" aria-label="关闭对话框">×</button></div><div id="modal-body"></div><p id="error" role="alert"></p></dialog>
+<dialog id="modal"><div class="modal-head"><strong id="modal-title"></strong><button id="close" aria-label="关闭对话框" data-i18n-aria-label="ui.close_dialog">×</button></div><div id="modal-body"></div><p id="error" role="alert"></p></dialog>
 <div id="toast" role="status"></div><script src="/widget.js" type="module"></script>
 </body></html>

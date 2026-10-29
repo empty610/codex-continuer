@@ -1,29 +1,14 @@
+import { MessageError, setActivity, taskActivityMessage, message as textMessage } from '../public/message.js';
 import { randomUUID } from 'node:crypto';
 import { buckets, quotaAvailable, QUOTA_TTL_MS } from './policy.js';
+import { defaultContinuation } from '../public/i18n.js';
+import { readThreadReply } from './thread-reply.js';
+import { enforceWakeLimit, isEnabledMonitorTask } from './monitor-task.js';
 
-export function enforceWakeLimit(task, limit) {
-  if ((task.sentCount || 0) < limit) return false;
-  task.continuous = false;
-  if (task.wake?.delivery !== 'uncertain') {
-    task.status = 'paused'; task.waitReason = 'send-limit'; task.retryAt = 0;
-    if (task.wake && task.wake.delivery !== 'sending') {
-      task.wake.armed = false;
-      if (task.wake.delivery === 'pending') task.wake.delivery = 'idle';
-    }
-    task.activity = `已达到原聊天发送上限（${task.sentCount}/${limit} 次），监测已停止；请查看原聊天确认工作结果`;
-  }
-  return true;
-}
+export { resetWake, enforceWakeLimit } from './monitor-task.js';
 
 export function quotaExhausted(payload) {
   return buckets(payload).some(b => Boolean(b.rateLimitReachedType) || [b.primary, b.secondary].some(w => Number.isFinite(w?.usedPercent) && w.usedPercent >= 100));
-}
-
-export function resetWake(task) {
-  task.wake = { armed: false, delivery: 'idle' };
-  task.status = task.continuous ? 'monitoring' : 'paused';
-  task.waitReason = null; task.retryAt = 0;
-  task.activity = task.continuous ? '正在监测额度；确认耗尽后，恢复时向原聊天发送“继续”' : '额度恢复续作已暂停';
 }
 
 export async function tickQuotaWake(manager, epoch = manager.scheduleEpoch) {
@@ -31,43 +16,62 @@ export async function tickQuotaWake(manager, epoch = manager.scheduleEpoch) {
   if (!manager.wakeSampledAt || now - manager.wakeSampledAt > QUOTA_TTL_MS) return;
   for (const task of manager.state.tasks) {
     if (!manager.canSchedule(epoch)) break;
-    if (task.mode !== 'quota-wake' || task.continuous !== true || !['monitoring', 'waiting'].includes(task.status)) continue;
+    if (!isEnabledMonitorTask(task)) continue;
     if (enforceWakeLimit(task, manager.state.settings.maxWakeSends)) { manager.changed(); continue; }
     const wake = task.wake ||= { armed: false, delivery: 'idle' };
     if (quotaExhausted(manager.wakeQuota)) {
       if (!wake.armed) {
         Object.assign(wake, { armed: true, episodeId: randomUUID(), exhaustedAt: now, delivery: 'pending' });
         task.status = 'waiting'; task.waitReason = 'quota'; task.retryAt = 0;
-        task.activity = '已确认额度耗尽，恢复后向原聊天发送一次“继续”';
-        manager.log(`${task.name}：${task.activity}`, 'info', task.id); manager.changed();
+        setActivity(task, textMessage("task.quota_exhaustion_confirmed_one_continuation_message_will_be"));
+        manager.log(taskActivityMessage(task), 'info', task.id); manager.changed();
       }
       continue;
     }
     if (wake.armed !== true || wake.delivery !== 'pending' || (task.retryAt || 0) > now || !quotaAvailable(manager.wakeQuota, manager.wakeSampledAt, manager.state.settings.minimumRemaining)) continue;
     if (!manager.wakeSender) {
-      if (task.waitReason !== 'desktop') { task.waitReason = 'desktop'; task.activity = '额度已恢复，等待消息发送通道'; manager.changed(); }
+      if (task.waitReason !== 'desktop') { task.waitReason = 'desktop'; setActivity(task, textMessage("task.quota_recovered_waiting_for_message_delivery_to_become")); manager.changed(); }
       continue;
     }
     manager.wakeExecutions.set(task.id, wake);
     try {
-      // Durable outbox claim before the side effect. A restart leaves this uncertain.
-      wake.delivery = 'sending'; task.activity = '额度已恢复，正在向原聊天发送“继续”'; manager.changed();
+      const permitted = () => manager.canSchedule(epoch) && isEnabledMonitorTask(task)
+        && task.wake === wake && manager.state.tasks.includes(task) && (task.sentCount || 0) < manager.state.settings.maxWakeSends
+        && quotaAvailable(manager.wakeQuota, manager.wakeSampledAt, manager.state.settings.minimumRemaining);
+      const inspectReply = async () => {
+        if (!permitted()) throw Object.assign(new MessageError(textMessage("error.paused_no_continuation_message_sent")), { cancelled: true });
+        let reply;
+        try { reply = await readThreadReply(manager.rpc, task.threadId); }
+        catch { reply = 'unknown'; }
+        if (!permitted()) throw Object.assign(new MessageError(textMessage("error.paused_no_continuation_message_sent")), { cancelled: true });
+        if (reply === 'complete') throw Object.assign(new MessageError(textMessage("error.the_last_instruction_already_received_a_complete_reply")), { replyComplete: true });
+        if (reply !== 'incomplete') throw Object.assign(new MessageError(reply === 'active' ? textMessage("error.the_original_chat_is_still_replying_no_continuation") : textMessage("error.reply_status_could_not_be_confirmed_no_continuation")), { waitForReply: true });
+      };
       try {
-        const result = await manager.wakeSender.send(task.threadId, { shouldSend: () => manager.canSchedule(epoch) && task.continuous === true && task.status !== 'paused' && task.wake === wake && manager.state.tasks.includes(task) && (task.sentCount || 0) < manager.state.settings.maxWakeSends && quotaAvailable(manager.wakeQuota, manager.wakeSampledAt, manager.state.settings.minimumRemaining) });
+        await inspectReply();
+        // Durable outbox claim before the side effect. A restart leaves this uncertain.
+        wake.delivery = 'sending'; setActivity(task, textMessage("task.quota_recovered_sending_a_continuation_message_to_the")); manager.changed();
+        const result = await manager.wakeSender.send(task.threadId, { message: task.continuationMessage?.trim() || defaultContinuation(manager.state.settings.language), shouldSend: permitted, beforeSend: inspectReply });
         Object.assign(wake, { armed: false, delivery: 'sent', sentAt: Date.now(), queueId: result?.queueId || null });
         task.sentCount = (task.sentCount || 0) + 1;
         // A user may pause while the queue command is in flight; don't undo it.
         if (task.continuous && task.status !== 'paused') { task.status = 'monitoring'; task.waitReason = null; }
-        task.activity = task.continuous ? '已向原聊天排队发送“继续”，继续监测；工作结果请在原聊天确认' : '已向原聊天排队发送“继续”，监测已暂停；已排队消息无法撤回';
+        setActivity(task, task.continuous ? textMessage("task.continuation_message_queued_monitoring_continues_check_results_in") : textMessage("task.continuation_message_queued_monitoring_paused_queued_messages_can"));
         enforceWakeLimit(task, manager.state.settings.maxWakeSends);
-        manager.log(`${task.name}：${task.activity}`, 'success', task.id);
+        manager.log(taskActivityMessage(task), 'success', task.id);
       } catch (error) {
-        if (error.cancelled) { wake.delivery = 'pending'; }
+        if (manager.persistence.status !== 'ok') throw error;
+        if (error.replyComplete) {
+          wake.armed = false; wake.delivery = 'idle'; task.retryAt = 0; task.waitReason = null;
+          task.status = task.continuous ? 'monitoring' : 'paused';
+        } else if (error.waitForReply) {
+          wake.delivery = 'pending'; task.waitReason = 'thread'; task.retryAt = Date.now() + manager.state.settings.pollSeconds * 1000;
+        } else if (error.cancelled) { if (wake.delivery === 'sending') wake.delivery = 'pending'; }
         else if (error.safeToRetry && task.continuous && task.status !== 'paused') {
           wake.delivery = 'pending'; task.waitReason = 'desktop'; task.retryAt = Date.now() + 60000;
         } else { wake.delivery = 'uncertain'; if (task.status !== 'paused') task.status = 'blocked'; }
-        task.activity = error.message;
-        manager.log(`${task.name}：${error.message}`, 'warning', task.id);
+        setActivity(task, error);
+        manager.log(taskActivityMessage(task), error.replyComplete ? 'info' : 'warning', task.id);
       }
       manager.changed();
     } finally { manager.wakeExecutions.delete(task.id); }

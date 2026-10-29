@@ -1,3 +1,4 @@
+import { t as tr } from './i18n.js';
 // Display only. A countdown reaching zero never grants permission to run work.
 export function quotaDisplay(state, connected = true, now = Date.now()) {
   if (!connected || state?.connection?.status !== 'connected' || !state?.sampledAt || now - state.sampledAt > 90000) return { remaining: null, resetsAt: null, windowMinutes: null };
@@ -9,12 +10,12 @@ export function quotaDisplay(state, connected = true, now = Date.now()) {
   return ordered[0];
 }
 export function resetCountdown(resetsAt, now = Date.now()) {
-  if (!Number.isFinite(resetsAt) || resetsAt <= 0) return '待同步';
+  if (!Number.isFinite(resetsAt) || resetsAt <= 0) return tr("ui.waiting_to_sync");
   const seconds = Math.ceil((resetsAt * 1000 - now) / 1000);
-  if (seconds <= 0) return '待刷新';
+  if (seconds <= 0) return tr("ui.awaiting_refresh");
   const pad = n => String(n).padStart(2, '0');
   const days = Math.floor(seconds / 86400);
-  return `${days ? `${days}天 ` : ''}${pad(Math.floor(seconds / 3600) % 24)}:${pad(Math.floor(seconds / 60) % 60)}:${pad(seconds % 60)}`;
+  return `${days ? tr("ui.d", { p0: days }) : ''}${pad(Math.floor(seconds / 3600) % 24)}:${pad(Math.floor(seconds / 60) % 60)}:${pad(seconds % 60)}`;
 }
 export function quotaWindow(state, slot = 'primary', connected = true, now = Date.now()) {
   if (!connected || state?.connection?.status !== 'connected' || !state?.sampledAt || now - state.sampledAt > 90000) return { remaining: null, resetsAt: null, windowMinutes: slot === 'primary' ? 300 : 10080 };

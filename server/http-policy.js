@@ -1,9 +1,13 @@
 // Only deliberate local validation messages may cross the HTTP boundary.
-export class ClientError extends Error {}
+import { MessageError, message, errorResponse } from '../public/message.js';
+
+export class ClientError extends MessageError {}
 export function clientErrorMessage(error) {
-  if (error instanceof ClientError) return error.message;
-  if (error?.code === 'ENOENT') return '项目目录不存在';
-  return '操作失败，请检查本地服务状态后重试';
+  return clientErrorResponse(error).error;
+}
+export function clientErrorResponse(error) {
+  if (error instanceof ClientError) return errorResponse(error);
+  return errorResponse(message(error?.code === 'ENOENT' ? 'error.project_missing' : 'error.operation_failed'));
 }
 
 // Fixed-size buckets: unauthenticated traffic cannot spend a client's budget.

@@ -63,18 +63,18 @@ test('both card layouts share task actions and live status translations', t => {
 });
 
 test('shared rendering escapes all task content and keeps monitor details separate from execution output', () => {
-  const unsafe = '\"><script>继续</script> & text', task = {
+  const unsafe = '\"><script>继续</script><SCRIPT data-check>upper</SCRIPT> & text', task = {
     ...watched(), id: unsafe, name: unsafe, note: unsafe, continuationMessage: unsafe, cwd: unsafe,
     activity: unsafe, progress: '0%;color:red', output: 'Obsolete execution output', plan: [{ step: 'Obsolete plan' }],
   };
   for (const layout of ['page', 'widget']) {
     const card = taskCardHtml(task, settings, layout), detail = taskDetailHtml(task, settings, { layout, canEdit: false });
-    for (const html of [card, detail]) { assert.doesNotMatch(html, /<script>|color:red|Obsolete/); assert.match(html, /&lt;script&gt;继续&lt;\/script&gt;/); }
+    for (const html of [card, detail]) { assert.doesNotMatch(html, /<script\b|color:red|Obsolete/i); assert.match(html, /&lt;script&gt;继续&lt;\/script&gt;/); }
     assert.match(card, /width:0%/);
     assert.match(detail, /data-action="edit-message"[^>]*disabled/);
     assert.doesNotMatch(taskDetailHtml(task, settings, { layout, canEdit: true }), /data-action="edit-message"[^>]*disabled/);
     const direct = taskDetailHtml({ ...task, mode: 'direct', prompt: unsafe, output: unsafe, plan: [{ step: unsafe, status: 'inProgress' }] }, settings, { layout });
-    assert.doesNotMatch(direct, /data-action="edit-message"|<script>/);
+    assert.doesNotMatch(direct, /data-action="edit-message"|<script\b/i);
     assert.match(direct, /&lt;script&gt;继续&lt;\/script&gt;/);
   }
 });

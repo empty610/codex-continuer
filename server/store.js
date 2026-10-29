@@ -1,5 +1,5 @@
 import { MessageError, message as textMessage } from '../public/message.js';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, copyFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, copyFileSync, openSync, closeSync, fstatSync } from 'node:fs';
 import { dirname } from 'node:path';
 import config from './config.cjs';
 import { validateTask } from './task-model.js';
@@ -26,8 +26,11 @@ export function validateState(state) {
   return state;
 }
 function readState(file) {
-  if (statSync(file).size > 64 * 1024 * 1024) throw new MessageError(textMessage("error.storage_size"));
-  return readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
+  const descriptor = openSync(file, 'r');
+  try {
+    if (fstatSync(descriptor).size > 64 * 1024 * 1024) throw new MessageError(textMessage("error.storage_size"));
+    return readFileSync(descriptor, 'utf8').replace(/^\uFEFF/, '');
+  } finally { closeSync(descriptor); }
 }
 function removeArchivedTasks(file, removedIds) {
   if (!existsSync(file)) return;

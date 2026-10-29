@@ -61,12 +61,13 @@ test('widget homepage receives persisted note previews in the state stream and u
 
 test('message editor escapes custom text and offers localized save and default-message guidance', tcase => {
   tcase.after(() => setLanguage('zh'));
-  const task = { id: 'watch', continuationMessage: '</textarea><script>保持原文</script>\n第二行' };
+  const task = { id: 'watch', continuationMessage: '</textarea><script>保持原文</script>\n第二行<SCRIPT data-check>upper</SCRIPT>' };
   for (const [language, save] of [['zh', '保存消息'], ['en', 'Save message']]) {
     setLanguage(language);
     const html = continuationEditor(task, escape);
     assert.match(html, /&lt;\/textarea&gt;&lt;script&gt;保持原文&lt;\/script&gt;\n第二行/);
-    assert.ok(html.includes(save)); assert.doesNotMatch(html, /<script>/);
+    assert.ok(html.includes(save)); assert.doesNotMatch(html, /<script\b/i);
+    assert.ok(html.includes('&lt;SCRIPT data-check&gt;upper&lt;/SCRIPT&gt;'));
     assert.match(html, /name="continuationMessage"/); assert.match(html, /maxlength="12000"/);
     if (language === 'en') assert.match(html, /Leave blank.*Continue/);
   }

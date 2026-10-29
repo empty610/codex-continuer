@@ -1,3 +1,4 @@
+import { errorResponse, message as textMessage } from '../public/message.js';
 import { readJsonBody } from './http-body.js';
 import { ClientError } from './http-policy.js';
 
@@ -14,8 +15,8 @@ export function createApiRouter({ manager, health, stream, rpc, demo, summary, s
     ['/api/storage/recover', input => manager.recoverStorage(input.source)],
     ['/api/tasks', input => manager.create(input)],
     ['/api/import', input => {
-      if (input.note !== undefined && input.prompt !== undefined) throw new ClientError('请仅提供监测备注 note；prompt 为旧版兼容字段');
-      return manager.importThread(input.threadId, input.note ?? input.prompt);
+      if (input.note !== undefined && input.prompt !== undefined) throw new ClientError(textMessage("error.note_alias_conflict"));
+      return manager.importThread(input.threadId, input.note ?? input.prompt, input.continuationMessage);
     }],
     ['/api/approval', input => manager.approve(input.id, input.decision, input.token)],
   ]);
@@ -29,9 +30,9 @@ export function createApiRouter({ manager, health, stream, rpc, demo, summary, s
       else if (path === '/api/logs') json(res, 200, { logs: manager.state.logs });
       else if (/^\/api\/tasks\/[^/]+$/.test(path)) {
         const task = manager.taskSnapshot(decodeURIComponent(path.split('/').pop()));
-        json(res, task ? 200 : 404, task ? { task } : { error: '任务不存在' });
+        json(res, task ? 200 : 404, task ? { task } : errorResponse(textMessage("error.work_item_not_found")));
       } else if (path === '/api/events') {
-        if (!stream.add(req, res, summary())) json(res, 429, { error: '实时连接已达上限，请关闭多余页面' });
+        if (!stream.add(req, res, summary())) json(res, 429, errorResponse(textMessage("error.stream_limit")));
       } else if (path === '/api/threads') json(res, 200, await manager.listThreads(url.searchParams.get('cursor')));
       else return false;
       return true;
@@ -40,7 +41,7 @@ export function createApiRouter({ manager, health, stream, rpc, demo, summary, s
     if (/^\/api\/approvals\/[^/]+$/.test(path)) {
       const input = await readJsonBody(req), approval = manager.approvals.get(decodeURIComponent(path.split('/').pop()));
       if (typeof input.token === 'string' && approval && approval.detailToken === input.token) json(res, 200, { approval });
-      else json(res, 404, { error: '授权请求已失效' });
+      else json(res, 404, errorResponse(textMessage("error.approval_expired")));
       return true;
     }
     const taskId = /^\/api\/tasks\/[^/]+$/.test(path) ? decodeURIComponent(path.split('/').pop()) : null;

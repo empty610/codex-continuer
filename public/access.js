@@ -1,9 +1,10 @@
 // Browser credential links are retired. Only the pinned native window receives
 // API authorization from its main process; discard legacy browser credentials.
-if (typeof window !== 'undefined' && typeof location !== 'undefined') {
+export function discardLegacyAccess({ location, history, sessionStorage }) {
   if (new URLSearchParams(location.hash.slice(1)).has('access')) history.replaceState(null, '', location.pathname + location.search);
   sessionStorage.removeItem('continuer-access');
 }
+if (typeof window !== 'undefined' && typeof location !== 'undefined') discardLegacyAccess(globalThis);
 export function accessHeaders() { return {}; }
 
 // Native EventSource cannot send authorization headers. Preserve its small

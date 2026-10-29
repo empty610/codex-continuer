@@ -7,7 +7,7 @@ localTls.fetchLocal = async () => { calls++; throw Error('fixture network failur
 const runtime = await import('../../plugin/runtime.js');
 let blocked = 0;
 for (const action of [() => runtime.ensureService(), () => runtime.openWidget({ automatic: true })]) {
-  try { await action(); } catch (error) { if (error.message.includes('已退出')) blocked++; }
+  try { await action(); } catch (error) { if (error.code === 'EXIT_REQUESTED') blocked++; }
 }
 const before = calls;
 try { await runtime.openWidget(); } catch {}

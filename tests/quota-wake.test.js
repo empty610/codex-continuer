@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { Manager } from '../server/manager.js';
 import { QueueSender } from '../server/queue-sender.js';
+import { interruptedThread } from './fixtures/thread-history.js';
 
 const threadId = '11111111-1111-4111-8111-111111111111';
 const sample = (used, secondary = 10) => ({ rateLimits: { primary: { usedPercent: used }, secondary: { usedPercent: secondary } } });
 async function setup(saved, send) {
   const rpc = new EventEmitter(); rpc.ready = true; rpc.calls = [];
-  rpc.call = async (method, params) => { rpc.calls.push(method); return { thread: { id: params?.threadId, name: 'Original', cwd: 'E:\\project' } }; };
+  rpc.call = async (method, params) => { rpc.calls.push(method); return { thread: interruptedThread(params?.threadId) }; };
   const sends = []; const saves = [];
   const m = new Manager(rpc, { load: () => saved && structuredClone(saved), save: s => saves.push(structuredClone(s)) }, { demo: true, wakeSender: { send: send || (async id => { sends.push(id); return { queueId: 'queued' }; }) } });
   m.connection.status = 'connected';

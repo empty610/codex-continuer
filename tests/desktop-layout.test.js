@@ -1,33 +1,32 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import vm from 'node:vm';
 import { EventEmitter } from 'node:events';
 
 const require=createRequire(import.meta.url);
-const source=readFileSync(new URL('../desktop/main.cjs',import.meta.url),'utf8');
+const { createDesktopRuntime } = require('../desktop/runtime.cjs');
 
-function fixture(x=700,y=300,nativeMonitor=true) {
-  let now=0,serial=0,bounds={x,y,width:160,height:160},top=false;
+function fixture(x=700,y=300,nativeMonitor=true,rounding=0) {
+  let now=0,serial=0,bounds={x,y,width:160+rounding,height:160+rounding},top=false;
   const timers=new Map(),updates=[],children=[];
   const prefs={follow:false,expanded:false,hidden:false,compactSize:160,offsets:{},positions:{}};
-  const window={getBounds:()=>({...bounds}),setBounds:next=>{bounds={...next};updates.push({...next});},
+  const window={getBounds:()=>({...bounds}),setBounds:next=>{bounds={...next,width:next.width+rounding,height:next.height+rounding};updates.push({...next});},
     isDestroyed:()=>false,isVisible:()=>true,isFocused:()=>true,isAlwaysOnTop:()=>top,
     setAlwaysOnTop:value=>{top=value;},focus:()=>{},hide:()=>{},webContents:{send:()=>{}}};
   const app={setName:()=>{},setPath:()=>{},requestSingleInstanceLock:()=>true,on:()=>{},
     whenReady:()=>({then:()=>({catch:()=>{}})})};
-  const context=vm.createContext({
-    require:name=>name==='electron'?{app,screen:{getDisplayMatching:()=>({workArea:{x:0,y:0,width:1920,height:1080}}),screenToDipRect:(_window,rect)=>rect}}:
+  const layout=createDesktopRuntime({
+    window,
+    load:name=>name==='electron'?{app,screen:{getDisplayMatching:()=>({workArea:{x:0,y:0,width:1920,height:1080}}),screenToDipRect:(_window,rect)=>rect}}:
+      name==='../server/config.cjs'?{dataDir:'fixture-data',port:4317,appInfo:()=>({})}:
+      name==='../server/logging.cjs'?{installLogs(){}}:
       name==='node:fs'?{mkdirSync:()=>{},readFileSync:()=>JSON.stringify(prefs),writeFileSync:()=>{},existsSync:()=>nativeMonitor}:
       name==='node:child_process'?{spawn:(command,args,options)=>{const child=new EventEmitter();Object.assign(child,{command,args,options});child.stdout={};child.stderr={resume:()=>{}};child.kill=()=>{child.killed=true;};children.push(child);return child;}}:
       name==='node:readline'?{createInterface:({input})=>{const lines=new EventEmitter();lines.close=()=>{lines.closed=true;};input.lines=lines;return lines;}}:
       name.startsWith('./')?require('../desktop/'+name.slice(2)):require(name),
-    __dirname:'E:/codex_continuer/desktop',process:{env:{},argv:[],pid:1,platform:'win32'},
-    performance:{now:()=>now},setTimeout:(callback,delay)=>{const id=++serial;timers.set(id,{callback,at:now+delay});return id;},clearTimeout:id=>timers.delete(id),
+    processInfo:{env:{},argv:[],pid:1,platform:'win32'},
+    timing:{setTimeout:(callback,delay)=>{const id=++serial;timers.set(id,{callback,at:now+delay});return id;},clearTimeout:id=>timers.delete(id)},
   });
-  vm.runInContext(source+'\nglobalThis.layout={init:w=>{win=w;isReady=true},changeExpanded,finishTransition,show,savePosition,state,getPrefs:()=>prefs,setFollow:value=>{prefs.follow=value;syncTracker();}};',context);
-  const layout=context.layout;layout.init(window);
   function advance(ms=450){for(let elapsed=0;elapsed<ms;elapsed+=16){now+=16;for(const [id,timer] of [...timers])if(now>=timer.at){timers.delete(id);timer.callback();}}}
   function toggle(expanded){layout.changeExpanded(expanded);layout.show(true,true);}
   return {layout,toggle,advance,updates,children,get top(){return top;},get bounds(){return {...bounds};},move:next=>{bounds={...bounds,...next};},get timers(){return timers.size;}};
@@ -47,15 +46,15 @@ test('independent mode has no tracker and disabling follow stops it without chan
   f.layout.setFollow(false);assert.equal(child.killed,true);assert.equal(f.layout.state().tracking,false);
   child.stdout.lines.emit('line',JSON.stringify({found:true,visible:true,x:0,y:0,width:1000,height:800}));
   child.emit('exit',0);
-  assert.equal(child.stdout.lines.closed,true);assert.equal(f.layout.getPrefs().follow,false);
+  assert.equal(child.stdout.lines.closed,true);assert.equal(f.layout.preferences.follow,false);
   assert.equal(f.layout.state().tracking,false);
   f.layout.setFollow(true);assert.equal(f.children.length,2);
-  child.emit('error',Error('late error'));assert.equal(f.layout.getPrefs().follow,true);
+  child.emit('error',Error('late error'));assert.equal(f.layout.preferences.follow,true);
 });
 
 test('a tracker failure falls back to independent mode and permits a later retry',()=>{
   const f=fixture();f.layout.setFollow(true);f.children[0].emit('error',Error('spawn failed'));
-  assert.equal(f.layout.getPrefs().follow,false);assert.equal(f.layout.state().tracking,false);
+  assert.equal(f.layout.preferences.follow,false);assert.equal(f.layout.state().tracking,false);
   f.layout.setFollow(true);assert.equal(f.children.length,2);
 });
 
@@ -82,7 +81,31 @@ test('moving the detailed panel never overwrites the compact position',()=>{
   const f=fixture();f.layout.savePosition();f.toggle(true);f.advance();
   f.move({x:250,y:60});f.layout.savePosition();
   f.toggle(false);f.advance();assert.deepEqual(f.bounds,{x:700,y:300,width:160,height:160});
-  f.toggle(true);f.advance();assert.deepEqual(f.bounds,{x:250,y:60,width:432,height:720});
+  f.toggle(true);f.advance();
+  assert.equal(f.bounds.x+f.bounds.width,860);
+  assert.equal(f.bounds.y,300);
+});
+
+test('expanding from a moved card ignores an expanded position saved elsewhere',()=>{
+  const f=fixture();f.layout.savePosition();f.toggle(true);f.advance();
+  f.move({x:180,y:20});f.layout.savePosition();
+  f.toggle(false);f.advance();f.move({x:1300,y:100});f.layout.savePosition();
+  f.toggle(true);f.advance();
+  assert.deepEqual(f.bounds,{x:1028,y:100,width:432,height:720});
+  f.toggle(false);f.advance();assert.deepEqual(f.bounds,{x:1300,y:100,width:160,height:160});
+});
+
+test('following expansion uses the card location and persists the new offset for later tracker updates',()=>{
+  const f=fixture(1300,100);f.layout.setFollow(true);
+  const tracker=f.children[0];
+  tracker.stdout.lines.emit('line',JSON.stringify({found:true,visible:true,x:0,y:0,width:1000,height:900}));
+  f.move({x:1300,y:100});f.layout.savePosition();
+  f.layout.preferences.offsets.expanded={right:500,bottom:300};
+  f.layout.preferences.positions.expanded={x:68,y:0,width:432,height:720};
+  f.toggle(true);f.advance();
+  assert.deepEqual(f.bounds,{x:1028,y:100,width:432,height:720});
+  tracker.stdout.lines.emit('line',JSON.stringify({found:true,visible:true,x:10,y:20,width:1000,height:900}));
+  assert.deepEqual(f.bounds,{x:1038,y:120,width:432,height:720});
 });
 
 test('rapid reversal cancels the old timer without storing intermediate geometry',()=>{
@@ -90,7 +113,7 @@ test('rapid reversal cancels the old timer without storing intermediate geometry
   for(let i=0;i<5;i++) {f.toggle(true);f.advance(80);f.toggle(false);f.advance(32);}
   f.advance();
   assert.deepEqual(f.bounds,{x:700,y:300,width:160,height:160});
-  const compact=f.layout.getPrefs().positions.compact;
+  const compact=f.layout.preferences.positions.compact;
   assert.equal(compact.x,700);assert.equal(compact.y,300);assert.equal(compact.width,160);
   assert.equal(f.timers,0);
 });
@@ -120,4 +143,16 @@ test('a stale fade acknowledgement cannot commit a reversed transition',()=>{
   f.toggle(false);f.layout.finishTransition(id);f.advance();
   assert.deepEqual(f.bounds,{x:700,y:300,width:160,height:160});
   assert.equal(f.updates.length,0);assert.equal(f.timers,0);
+});
+
+test('repeated expansion does not accumulate fractional-DPI rounding or overwrite the compact drop',()=>{
+  for (const rounding of [1,4]) {
+    const f=fixture(1300,100,true,rounding);f.layout.savePosition();
+    for(let cycle=0;cycle<50;cycle++) {
+      f.toggle(true);f.advance();
+      assert.equal(f.bounds.x,1028+rounding);assert.equal(f.bounds.y,100);
+      f.toggle(false);f.advance();
+      assert.deepEqual(f.bounds,{x:1300,y:100,width:160+rounding,height:160+rounding});
+    }
+  }
 });

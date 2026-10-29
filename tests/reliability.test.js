@@ -39,6 +39,29 @@ test('state writes keep a valid backup and damaged JSON cannot be overwritten', 
   assert.throws(() => store.save(state()), /禁止覆盖/); assert.equal(readFileSync(file, 'utf8'), '{broken');
 });
 
+test('ending monitoring removes notes and custom messages from primary, backup and valid recovery copies', async t => {
+  const file = join(temporary(t), 'state.json'), store = new Store(file);
+  const { m } = manager(store, true);
+  const removed = await m.importThread('remove-chat', 'Removed private monitoring note', 'Removed custom instruction');
+  const kept = await m.importThread('keep-chat', 'Keep this monitoring note', 'Keep this instruction');
+  await m.action(removed.id, 'pause');
+  assert.equal(store.load().tasks.find(task => task.id === removed.id).note, removed.note);
+  const before = readFileSync(file, 'utf8');
+  for (const suffix of ['.before-restore', '.restore.tmp']) writeFileSync(file + suffix, before);
+  await m.action(removed.id, 'complete');
+  assert.equal(m.taskSnapshot(removed.id), null);
+  for (const suffix of ['', '.bak', '.before-restore', '.restore.tmp']) {
+    const raw = readFileSync(file + suffix, 'utf8'), saved = validateState(JSON.parse(raw));
+    assert.doesNotMatch(raw, /Removed private monitoring note|Removed custom instruction/, suffix || 'primary');
+    assert.equal(saved.tasks.some(task => task.id === removed.id), false);
+    assert.equal(saved.tasks.find(task => task.id === kept.id).note, 'Keep this monitoring note');
+  }
+  const restored = store.restoreBackup(saved => { saved.settings.enabled = false; });
+  assert.equal(restored.tasks.some(task => task.id === removed.id), false);
+  assert.equal(restored.tasks.find(task => task.id === kept.id).note, kept.note);
+  m.stop();
+});
+
 test('missing primary with backup and incompatible schemas require explicit recovery', t => {
   const directory = temporary(t), file = join(directory, 'state.json');
   writeFileSync(file + '.bak', JSON.stringify(state()));

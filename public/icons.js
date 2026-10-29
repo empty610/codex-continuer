@@ -1,0 +1,22 @@
+const paths = {
+ overview: '<rect x="3" y="3" width="7" height="7" rx="1.4"/><rect x="14" y="3" width="7" height="7" rx="1.4"/><rect x="3" y="14" width="7" height="7" rx="1.4"/><rect x="14" y="14" width="7" height="7" rx="1.4"/>',
+ tasks: '<rect x="4" y="4" width="16" height="17" rx="2"/><path d="M9 3h6v4H9zM8 12h8M8 16h5"/>',
+ chart: '<path d="M4 3v17h17M8 15v-4M13 15V7M18 15V4"/>',
+ logs: '<path d="M5 4h14v16H5zM9 8h6M9 12h6M9 16h4"/>',
+ settings: '<path d="m9 3-1 3-3 1-1 4 2 2v3l3 2 3-1 3 1 3-2v-3l2-2-1-4-3-1-1-3z"/><circle cx="12" cy="11" r="3"/>',
+ shield: '<path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6zM8 12l3 3 5-6"/>',
+ sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1 1M18 18l1 1M5 19l1-1M18 6l1-1"/>',
+ refresh: '<path d="M20 8a8 8 0 0 0-14-3L3 8m0-5v5h5M4 16a8 8 0 0 0 14 3l3-3m0 5v-5h-5"/>',
+ plus: '<path d="M12 5v14M5 12h14"/>',
+ arrow: '<path d="M5 12h14m-5-5 5 5-5 5"/>',
+ play: '<path d="m8 5 11 7-11 7z"/>',
+ pause: '<path d="M8 5v14M16 5v14"/>',
+ clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+ bolt: '<path d="m13 2-9 12h7l-1 8L21 9h-8z"/>',
+ folder: '<path d="M3 7V5h6l2 2h10v13H3z"/>',
+ check: '<path d="m5 12 4 4L19 6"/>',
+ close: '<path d="m6 6 12 12M6 18 18 6"/>',
+ info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v.5"/>',
+ import: '<path d="M4 14v6h16v-6M12 3v12m-5-5 5 5 5-5"/>',
+};
+export const icon = name => `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name] || paths.tasks}</svg>`;

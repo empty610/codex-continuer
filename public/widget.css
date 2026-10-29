@@ -4,8 +4,11 @@
 #mini.has-art #mini-open{animation:readout-art-cycle 60s ease-in-out infinite;animation-play-state:paused}
 #mini.has-art[data-motion=running] #mini-open{animation-play-state:running}
 @keyframes readout-art-cycle{0%,20%{opacity:1}21.1667%,64.1667%{opacity:0}65.5%,100%{opacity:1}}
-/* Keep quota information visible throughout the decorative artwork cycle. */
+/* Hide quota text during the spacecraft flight, then restore it above the lower signal. */
 #gauge-readout{opacity:1}
+#mini.has-art #gauge-readout{animation:readout-flight 60s linear infinite;animation-play-state:paused}
+#mini.has-art[data-motion=running] #gauge-readout{animation-play-state:running}
+@keyframes readout-flight{0%,20%{opacity:1}21%,30.5%{opacity:0}31.5%,100%{opacity:1}}
 #mini.is-refreshing #quota-readout{animation:quota-reload 1s cubic-bezier(.37,0,.63,1) both}
 @keyframes quota-reload{0%,100%{opacity:1}45%,55%{opacity:0}}
 @keyframes beacon{0%,100%{opacity:.5}50%{opacity:1}}.size-setting>span{display:flex;flex-direction:column;align-items:flex-end;gap:5px}.size-setting output{font:10px var(--mono);color:var(--accent)}#compact-size{width:130px;padding:0;accent-color:var(--accent);border:0;background:transparent}.browser{min-height:100dvh;background:var(--bg)}.browser .shell{width:min(416px,100%);height:min(704px,calc(100dvh - 16px));margin:auto;transition:width .28s ease,height .28s ease,border-radius .28s ease,background-color .28s ease}.browser.collapsed .shell{width:var(--disc-size);height:var(--disc-size)}.browser #quit,.browser #follow-label,.browser #reset-position{display:none}@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}}@media(max-width:340px){.scroll{padding:4px 11px 10px}header{padding:13px 10px;gap:3px}.brand strong{font-size:13px;letter-spacing:.7px}.brand small{letter-spacing:1px}.quota{padding:11px}.quota strong{font-size:32px}.scheduler strong span{display:none}.section-label em{padding-right:5px;margin-right:3px}}
@@ -39,3 +42,11 @@ body:not(.browser).is-switching:not(.collapsed) #panel{opacity:1;visibility:visi
 body:not(.browser).is-switching header{-webkit-app-region:no-drag}
 /* Storage diagnostics share the existing compact panel palette. */
 .storage-warning{margin:10px 0;padding:10px;border:1px solid var(--line);border-radius:8px;font-size:11px;line-height:1.6}.storage-warning p{margin:4px 0}.storage-warning button{margin:4px 4px 4px 0}
+
+.monitor-note{margin:12px 0;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font-size:11px;line-height:1.7;overflow-wrap:anywhere}.monitor-note strong{display:block;font-size:10px;opacity:.7;margin-bottom:4px}.monitor-note span{display:block;white-space:pre-wrap;max-height:10em;overflow:auto}.monitor-note small{display:block;margin-top:4px;opacity:.7}
+
+.detail-summary{white-space:pre-wrap}
+.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}.form-error{color:var(--orange);font-size:11px;line-height:1.5}
+#language{background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:4px;padding:3px 1px;font-size:10px;max-width:69px;-webkit-app-region:no-drag}
+html[lang=en-US] .brand small{font-size:8px;letter-spacing:0}html[lang=en-US] .brand strong{font-size:12px}html[lang=en-US] .scheduler strong>span{display:none}
+html[lang=en-US] #mini-window{font-size:7px;letter-spacing:0}html[lang=en-US] .task-bottom{gap:6px;flex-wrap:wrap}html[lang=en-US] .task-bottom>div{margin-left:auto}

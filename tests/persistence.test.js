@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Manager } from '../server/manager.js';
 import { Store } from '../server/store.js';
+import { interruptedThread } from './fixtures/thread-history.js';
 
 const directId = '11111111-1111-4111-8111-111111111111';
 const watchedId = '22222222-2222-4222-8222-222222222222';
@@ -14,7 +15,7 @@ function setup({ store = { load: () => null, save: () => {} }, send = async () =
   const rpc = new EventEmitter(), saves = [];
   let closed = 0;
   rpc.ready = true; rpc.close = () => { closed++; }; rpc.send = () => {};
-  rpc.call = async (_method, params) => ({ thread: { id: params?.threadId, name: 'Watched', cwd: 'E:\\project' } });
+  rpc.call = async (_method, params) => ({ thread: interruptedThread(params?.threadId, { name: 'Watched', cwd: 'E:\\project' }) });
   const m = new Manager(rpc, { load: () => store.load(), save: state => { store.save(state); saves.push(structuredClone(state)); } }, { demo: true, wakeSender: { send } });
   m.connection.status = 'connected';
   const task = m.create({ name: 'Streaming', cwd: 'E:\\project', prompt: 'Isolated streaming fixture', continuous: true });

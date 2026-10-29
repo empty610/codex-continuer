@@ -1,3 +1,4 @@
+import { MessageError, message as textMessage } from '../public/message.js';
 import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { createInterface } from 'node:readline';
@@ -27,10 +28,10 @@ export class CodexRpc extends EventEmitter {
       this.child = null;
       for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(error); }
       this.pending.clear();
-      this.emit('disconnect', error.message);
+      this.emit('disconnect', error.message, error.messageInfo);
     };
     child.on('error', fail);
-    child.on('exit', (code) => fail(new Error(`Codex 进程已退出 (${code})`)));
+    child.on('exit', (code) => fail(new MessageError(textMessage("error.codex_exit", { code: code }))));
     child.stdin.on('error', fail);
     // Do not expose stderr: extensions can log credential-bearing diagnostics.
     child.stderr.resume();
@@ -50,19 +51,19 @@ export class CodexRpc extends EventEmitter {
     });
     try {
       await this.call('initialize', { clientInfo: { name: 'codex_continuer', title: 'Codex Continuer', version: config.version }, capabilities: { experimentalApi: false } });
-      if (this.child !== child) throw new Error('Codex 连接已失效');
+      if (this.child !== child) throw new MessageError(textMessage("error.codex_connection"));
       this.send({ method: 'initialized' });
       this.ready = true;
     } catch (error) { child.kill(); throw error; }
   }
   send(message) {
-    if (!this.child?.stdin.writable) throw new Error('Codex 未连接');
+    if (!this.child?.stdin.writable) throw new MessageError(textMessage("error.codex_disconnected"));
     this.child.stdin.write(JSON.stringify(message) + '\n');
   }
   call(method, params = {}) {
     const id = ++this.sequence;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { this.pending.delete(id); reject(new Error(`${method} 请求超时，请检查连接`)); }, 30000);
+      const timer = setTimeout(() => { this.pending.delete(id); reject(new MessageError(textMessage("error.rpc_timeout", { method: method }))); }, 30000);
       this.pending.set(id, { resolve, reject, timer });
       try { this.send({ id, method, params }); } catch (error) { clearTimeout(timer); this.pending.delete(id); reject(error); }
     });
@@ -71,7 +72,7 @@ export class CodexRpc extends EventEmitter {
     const child = this.child;
     if (!child) return;
     this.child = null; this.ready = false;
-    for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(new Error('Codex 连接已关闭')); }
+    for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(new MessageError(textMessage("error.codex_connection_closed"))); }
     this.pending.clear();
     // EOF permits app-server to close its sessions before the bounded fallback.
     child.stdin.end();

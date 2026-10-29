@@ -1,12 +1,12 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import exitState from '../server/exit-state.cjs';
 import { alive, diagnostic } from '../server/health.js';
+import { assertServiceIdentity } from './local-client.js';
 
 const execute = promisify(execFile);
-const canonical = value => process.platform === 'win32' ? resolve(value).toLowerCase() : resolve(value);
 export async function stopBackground({ root, dataDir, request, demo = false, cleanup = async (phase, pid = 0) => {
   await execute('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', join(root, 'plugin/stop-owned.ps1'), '-PluginRoot', root, '-DataDir', dataDir, '-Phase', phase, '-ServicePid', String(pid)], { windowsHide: true, timeout: 10000 });
 }, isAlive = alive, wait = delay, graceMs = 2500 }) {
@@ -17,8 +17,7 @@ export async function stopBackground({ root, dataDir, request, demo = false, cle
   let pid = diagnostic(join(dataDir, demo ? 'demo-service.lock' : 'service.lock'))?.pid;
   try {
     const state = await request('/api/state', undefined, { timeoutMs: 2000 });
-    if (state.app !== 'codex-continuer' || typeof state.diagnostics?.projectRoot !== 'string' || typeof state.diagnostics?.dataDir !== 'string'
-      || canonical(state.diagnostics.projectRoot) !== canonical(root) || canonical(state.diagnostics.dataDir) !== canonical(dataDir)) throw Error('Refusing to shut down another application or data directory.');
+    assertServiceIdentity(state, { root, dataDir });
     pid = state.diagnostics.pid;
     await request('/api/shutdown', {}, { timeoutMs: 5000 });
   } catch (error) {

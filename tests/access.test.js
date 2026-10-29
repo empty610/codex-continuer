@@ -3,9 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, writeFileSync, realpathSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
-import { runInNewContext } from 'node:vm';
 import access from '../server/access.cjs';
-import { AuthenticatedSource } from '../public/access.js';
+import { AuthenticatedSource, discardLegacyAccess, accessHeaders } from '../public/access.js';
 import { doctor } from '../scripts/doctor.js';
 
 test('credentials are random, persistent, mode-separated and malformed files fail closed', t => {
@@ -23,10 +22,9 @@ test('credentials are random, persistent, mode-separated and malformed files fai
 
 test('retired browser bootstrap discards legacy credentials and never authorizes requests', () => {
   const token = 'a'.repeat(64), saved = new Map(); let replaced;
-  const source = readFileSync(new URL('../public/access.js', import.meta.url), 'utf8').replace(/^export /gm, '') + '\nthis.headers = accessHeaders();';
   saved.set('continuer-access', token);
   const context = { window: {}, location: { hash: '#access=' + token, pathname: '/', search: '' }, history: { replaceState(_state, _title, url) { replaced = url; } }, sessionStorage: { removeItem: key => saved.delete(key), getItem: key => saved.get(key) }, URLSearchParams };
-  runInNewContext(source, context); assert.equal(replaced, '/'); assert.equal(context.headers.Authorization, undefined);
+  discardLegacyAccess(context); assert.equal(replaced, '/'); assert.equal(accessHeaders().Authorization, undefined);
   assert.equal(saved.size, 0);
 });
 

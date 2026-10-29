@@ -1,14 +1,20 @@
-export const wakeExplanation = '确认额度耗尽并恢复后，仅向原聊天发送固定“继续”；备注不发送。不读取原聊天进度或完成状态，工作结果请在原聊天确认。';
+import { t as tr, onLanguageChange } from './i18n.js';
+const wakeMessageId = "ui.after_confirmed_quota_exhaustion_and_recovery_the";
+export let wakeExplanation = tr(wakeMessageId);
+onLanguageChange(() => { wakeExplanation = tr(wakeMessageId); });
 export function taskMode(task, settings) {
   const wake = task.mode === 'quota-wake';
   return {
     wake,
-    description: wake ? `监测备注：${task.note || '未填写'}（仅本地保存）` : task.prompt,
-    counter: wake ? `已排队发送 ${task.sentCount || 0} / ${settings.maxWakeSends} 次` : `已执行 ${task.rounds} / ${settings.maxRounds} 轮`,
-    progress: wake ? '进度请在原聊天查看' : null,
-    continuous: wake ? '额度监测' : '持续工作',
-    pause: wake ? '暂停监测' : '暂停',
-    resume: wake ? '开启监测' : '继续',
-    complete: wake ? '结束监测并移除' : '标记完成',
+    description: wake ? tr("ui.monitoring_note_local_only", { p0: task.note || tr("ui.not_provided") }) : task.prompt,
+    counter: wake ? tr("ui.queued_messages", { p0: task.sentCount || 0, p1: settings.maxWakeSends }) : tr("ui.executed_turns", { p0: task.rounds, p1: settings.maxRounds }),
+    progress: wake ? tr("ui.check_progress_in_the_original_chat") : null,
+    continuous: wake ? tr("ui.quota_monitor") : tr("ui.continuous_work"),
+    pause: wake ? tr("ui.pause_monitoring") : tr("ui.pause"),
+    resume: wake ? tr("ui.enable_monitoring") : tr("ui.continue"),
+    complete: wake ? tr("ui.end_monitoring_and_remove") : tr("ui.mark_complete"),
   };
+}
+export function continuationEditor(task, esc) {
+  return `<form id="message-form" data-id="${esc(task.id)}"><label class="form-field">${tr("ui.continuation_message_optional_2")}<textarea name="continuationMessage" maxlength="12000" placeholder="${tr("ui.leave_blank_to_send_continue_example_run")}" autofocus>${esc(task.continuationMessage || '')}</textarea></label><p class="hint subtitle">${tr("ui.leave_blank_to_use_the_default_message")}</p><p class="hint subtitle">${tr("ui.the_saved_message_is_used_for_future")}</p><div class="form-error"></div><div class="modal-actions"><button type="button" data-action="detail" data-id="${esc(task.id)}">${tr("ui.cancel")}</button><button class="primary" type="submit">${tr("ui.save_message")}</button></div></form>`;
 }

@@ -17,6 +17,18 @@ function placeIndependent(saved, current, workArea, size) {
   const y = saved?.y ?? (Math.abs(current.height-size.height)<=1 ? current.y : current.y+current.height-size.height);
   return place({ x, y, ...size },workArea,size,{ right: 0, bottom: 0 });
 }
+function expandFromCard(card, workArea, size) {
+  const width = Math.min(size.width, workArea.width), height = Math.min(size.height, workArea.height);
+  const align = (start, length, minimum, available, expanded) => {
+    const endAligned = start + length - expanded, maximum = minimum + available - expanded;
+    // Prefer the shared bottom/right edge; near the top/left edge, grow in
+    // the other direction instead of sliding the card's corner to the edge.
+    if (endAligned >= minimum && endAligned <= maximum) return Math.round(endAligned);
+    if (start >= minimum && start <= maximum) return Math.round(start);
+    return Math.round(Math.max(minimum, Math.min(endAligned, maximum)));
+  };
+  return { x: align(card.x, card.width, workArea.x, workArea.width, width), y: align(card.y, card.height, workArea.y, workArea.height, height), width, height };
+}
 function compactSize(value) { return Number.isFinite(value) ? Math.min(420,Math.max(160,Math.round(value))) : 256; }
 function samePlacementContext(a,b) {
   return !!a && a.mode===b.mode && a.follow===b.follow && a.compactSize===b.compactSize &&
@@ -31,4 +43,4 @@ function restoreModePosition(fallback,saved,workArea) {
     ? {...fallback,x,y} : fallback;
 }
 const sizes = { compact: { width: 256, height: 256 }, expanded: { width: 432, height: 720 } };
-module.exports = { place, placeIndependent, offsetFrom, sizes, compactSize, samePlacementContext, restoreModePosition };
+module.exports = { place, placeIndependent, expandFromCard, offsetFrom, sizes, compactSize, samePlacementContext, restoreModePosition };

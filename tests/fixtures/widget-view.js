@@ -1,15 +1,11 @@
-import { readFileSync } from 'node:fs';
-import { runInNewContext } from 'node:vm';
-import { VisibleFeed, LazyResource, setHtml } from '../../public/view-lifecycle.js';
-import { TaskDetails } from '../../public/task-details.js';
-import { ApprovalDetails } from '../../public/approval-details.js';
-import { storageNotice } from '../../public/storage-status.js';
-import { taskMode, wakeExplanation } from '../../public/task-mode.js';
-import { quotaWindow, resetCountdown } from '../../public/quota-display.js';
-import { pixelText } from '../../public/rhine-readout.js';
+import { mountPage } from '../../public/app.js';
+import { mountWidget } from '../../public/widget.js';
 
-export function widgetView({ reducedMotion = true } = {}) {
-  const elements = new Map(), requests = [], sources = [], intervals = new Map(), timeouts = new Map();
+export function widgetView(options = {}) { return interfaceView('widget', options); }
+export function pageView(options = {}) { return interfaceView('page', options); }
+
+function interfaceView(surface, { reducedMotion = true, threads = async () => ({ data: [], nextCursor: null }), task = async () => ({ task: null }), request = null } = {}) {
+  const elements = new Map(), requests = [], apiCalls = [], sources = [], intervals = new Map(), timeouts = new Map(), events = new Map();
   let now = Date.now();
   let serial = 0, desktopListener;
   const classes = initial => { const values = new Set(initial); return { contains: key => values.has(key), add: key => values.add(key), remove: key => values.delete(key), toggle(key, on = !values.has(key)) { on ? values.add(key) : values.delete(key); } }; };
@@ -17,26 +13,41 @@ export function widgetView({ reducedMotion = true } = {}) {
     if (!elements.has(selector)) elements.set(selector, {
       value: '', textContent: '', open: false, writes: 0, dataset: {}, classList: classes([]), style: { setProperty() {} },
       set innerHTML(value) { this.html = value; this.writes++; }, get innerHTML() { return this.html || ''; },
-      addEventListener() {}, setAttribute() {}, replaceChildren() {}, close() { this.open = false; }, showModal() { this.open = true; }, querySelectorAll: () => [],
+      addEventListener(name, callback) { (this.events ||= new Map()).set(name, callback); }, emit(name) { this.events?.get(name)?.(); }, setAttribute() {}, replaceChildren() {}, close() { this.open = false; }, showModal() { this.open = true; }, querySelectorAll: () => [], closest: () => null,
+      querySelector: query => element(`${selector} ${query}`),
+      elements: { namedItem: name => element(`${selector} [name=${name}]`) },
     });
     return elements.get(selector);
   };
   const desktop = { expanded: false, visible: false, follow: false, compactSize: 256, panelSize: { width: 414, height: 702 } };
   const bridge = { onState: callback => { desktopListener = callback; }, async control(action) { if (action === 'renderer-ready') desktop.visible = true; return { ...desktop }; } };
-  class Feed extends VisibleFeed { constructor(options) { super({ ...options, create: () => { const source = { close() { this.closed = true; } }; sources.push(source); return source; } }); } }
-  const document = { hidden: false, activeElement: null, body: { classList: classes(['collapsed']) }, documentElement: { style: { setProperty() {} } }, querySelector: element, importNode: value => value, addEventListener() {} };
+  const querySelector = selector => surface === 'page' && selector.startsWith('#settings-form') && !element('#main').innerHTML.includes('id="settings-form"') ? null : element(selector);
+  const document = { hidden: false, activeElement: null, body: { classList: classes(surface === 'widget' ? ['collapsed'] : []) }, documentElement: { style: { setProperty() {} } }, querySelector, querySelectorAll: () => [], importNode: value => value, addEventListener(name, callback) { events.set(name, callback); } };
   class ViewDate extends Date { constructor(...args) { super(...(args.length ? args : [now])); } static now() { return now; } }
-  const context = { document, window: { continuerDesktop: bridge, matchMedia: () => ({ matches: reducedMotion }), addEventListener() {} }, localStorage: { getItem: () => null, setItem() {} }, Date: ViewDate,
-    TaskDetails, ApprovalDetails, VisibleFeed: Feed, LazyResource, setHtml, storageNotice, taskMode, wakeExplanation,
-    quotaWindow: (state, slot, connected) => quotaWindow(state, slot, connected, now), resetCountdown: value => resetCountdown(value, now), pixelText, accessHeaders: () => ({}),
+  class ViewFormData {
+    constructor(form) { this.values = form.values || {}; }
+    [Symbol.iterator]() { return Object.entries(this.values)[Symbol.iterator](); }
+  }
+  const context = { document, window: { continuerDesktop: surface === 'widget' ? bridge : undefined, matchMedia: () => ({ matches: reducedMotion }), addEventListener() {} }, localStorage: { getItem: () => null, setItem() {} }, Date: ViewDate, FormData: ViewFormData,
+    createSource() { const source = { close() { this.closed = true; } }; sources.push(source); return source; },
     AbortSignal, getComputedStyle: () => ({ opacity: '1' }), DOMParser: class { parseFromString() { return { querySelector: () => null, documentElement: {} }; } },
     setInterval(callback, period) { const id = ++serial; intervals.set(id, { callback, period, at: now + period }); return id; }, clearInterval: id => intervals.delete(id),
     setTimeout(callback, period) { const id = ++serial; timeouts.set(id, { callback, at: now + period }); return id; }, clearTimeout: id => timeouts.delete(id),
-    async fetch(path) { requests.push(path); return { ok: true, json: async () => ({ data: [], nextCursor: null }), text: async () => '<svg/>' }; },
+    async fetch(path, options) {
+      requests.push(path); apiCalls.push({ path, options });
+      const data = request ? await request(path, options) : path.startsWith('/api/threads') ? await threads(path, options) : path.startsWith('/api/tasks/') ? await task(path, options) : {};
+      return { ok: true, json: async () => data, text: async () => '<svg/>' };
+    },
   };
-  const source = readFileSync(new URL('../../public/widget.js', import.meta.url), 'utf8').replace(/^import .*\n/gm, '');
-  runInNewContext(source, context);
-  return { requests, sources, intervals, timeouts, element, now: () => now,
+  (surface === 'widget' ? mountWidget : mountPage)(context);
+  return { requests, apiCalls, sources, intervals, timeouts, element, now: () => now,
+    action(action, id) { return events.get('click')({ target: { closest: () => ({ dataset: { action, id } }) } }); },
+    page(page) { return events.get('click')({ target: { closest: () => ({ dataset: { page } }) } }); },
+    submit(id, values, dataset = {}) {
+      const form = element('#' + id); Object.assign(form, { id, values, dataset });
+      return events.get('submit')({ target: form, preventDefault() {} });
+    },
+    visible(value) { document.hidden = !value; events.get('visibilitychange')?.(); },
     advance(duration) {
       const end = now + duration;
       while (true) {
@@ -49,7 +60,7 @@ export function widgetView({ reducedMotion = true } = {}) {
       now = end;
     },
     desktop(change) { Object.assign(desktop, change); desktopListener({ ...desktop }); },
-    message(index, state) { sources[index].onmessage({ data: JSON.stringify(state) }); },
+    message(index, state) { sources[index].onmessage({ data: JSON.stringify({ version: '0.5.1', buildId: 'fixture', history: [], ...state }) }); },
     flush: () => new Promise(resolve => setImmediate(resolve)),
   };
 }

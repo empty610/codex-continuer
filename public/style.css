@@ -16,3 +16,9 @@ body.dark{--bg:#20251f;--surface:#293027;--side:#242a21;--line:#3b4435;--muted:#
 .banner,body.dark .banner{background:var(--tint);border-color:var(--line)}.banner h3,body.dark .banner h3{color:var(--purple)}.banner p,body.dark .banner p{color:var(--muted)}
 
 nav>button.active,body.dark nav>button.active{background:var(--tint);color:var(--purple)}.banner-icon,body.dark .banner-icon{background:var(--surface);border-color:var(--line);color:var(--purple)}.card-bottom,body.dark .card-bottom{background:var(--side)}.count{background:var(--tint);color:var(--purple)}
+
+.monitor-note{margin:12px 0;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font-size:11px;line-height:1.7;overflow-wrap:anywhere}.monitor-note strong{display:block;font-size:10px;opacity:.7;margin-bottom:4px}.monitor-note span{display:block;white-space:pre-wrap;max-height:10em;overflow:auto}.monitor-note small{display:block;margin-top:4px;opacity:.7}
+
+.detail-summary{white-space:pre-wrap}
+#language{padding:6px 8px;font-size:12px}
+.setting-row>div:last-child{flex-shrink:0;white-space:nowrap}

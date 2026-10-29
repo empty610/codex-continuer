@@ -34,7 +34,15 @@ app.whenReady().then(async () => {
   await win.webContents.executeJavaScript("document.querySelector('#mini').classList.add('has-art');document.querySelector('#mini').dataset.motion='running';document.querySelector('#mini-quota').textContent='77';document.querySelector('#mini-reset').textContent='02:00:00';document.querySelector('#mini-reset').classList.remove('visually-empty');document.getAnimations().forEach(a=>a.pause());");
   mark('initialized');
   const phases = [];
-  for (const at of [0, 15000, 30000, 45000, 59000]) phases.push(await win.webContents.executeJavaScript("document.getAnimations().forEach(a=>a.currentTime=" + at + ");({at:" + at + ",opacity:Number(getComputedStyle(document.querySelector('#gauge-readout')).opacity),animation:getComputedStyle(document.querySelector('#gauge-readout')).animationName})"));
+  for (const at of [0, 12000, 12300, 12600, 13000, 15000, 17000, 18000, 18300, 18600, 18900, 19200, 21000, 24000, 30000, 45000, 59000]) {
+    phases.push(await win.webContents.executeJavaScript("document.getAnimations().forEach(a=>a.currentTime=" + at + ");({at:" + at + ",opacity:Number(getComputedStyle(document.querySelector('#gauge-readout')).opacity),animation:getComputedStyle(document.querySelector('#gauge-readout')).animationName,flight:Number(getComputedStyle(document.querySelector('.rhine-signal-launch-stage')).opacity),signal:Number(getComputedStyle(document.querySelector('.rhine-signal-data')).opacity)})"));
+    if (captureDir && [0, 13000, 15000, 18000, 19200, 21000, 24000, 30000].includes(at)) {
+      fs.mkdirSync(captureDir, { recursive: true });
+      await new Promise(resolve => setTimeout(resolve, 40));
+      fs.writeFileSync(path.join(captureDir, 'phase-' + at + '.png'), (await win.webContents.capturePage()).toPNG());
+    }
+  }
+  const position = await win.webContents.executeJavaScript("(() => {const node=document.querySelector('.rhine-signal-data-line'),box=node.getBoundingClientRect(),label=document.querySelector('#mini-window').getBoundingClientRect(),reset=document.querySelector('#mini-reset').getBoundingClientRect();return {offset:node.transform.baseVal.consolidate().matrix.f,top:box.top,bottom:box.bottom,labelBottom:label.bottom,resetTop:reset.top};})()");
   mark('phases-checked');
   await win.webContents.executeJavaScript("document.getAnimations().forEach(a=>a.currentTime=0);document.querySelector('#mini').classList.add('is-refreshing');globalThis.fade=document.querySelector('#quota-readout').getAnimations().find(a=>a.animationName==='quota-reload');fade.pause();");
   const duration = await win.webContents.executeJavaScript('fade.effect.getTiming().duration');
@@ -47,6 +55,8 @@ app.whenReady().then(async () => {
       fs.writeFileSync(path.join(captureDir, 'quota-' + at + '.png'), (await win.webContents.capturePage()).toPNG());
     }
   }
-  fs.writeFileSync(output, JSON.stringify({ ...result.value, phases, frames, duration }));
+  await command('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+  const reduced = await win.webContents.executeJavaScript("({opacity:Number(getComputedStyle(document.querySelector('#gauge-readout')).opacity),animation:getComputedStyle(document.querySelector('#gauge-readout')).animationName})");
+  fs.writeFileSync(output, JSON.stringify({ ...result.value, phases, frames, duration, position, reduced }));
   win.destroy(); app.quit();
 }).catch(error => { fs.writeFileSync(output, JSON.stringify({ error: error.stack })); app.exit(1); });

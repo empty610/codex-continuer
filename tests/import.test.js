@@ -2,10 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { Manager } from '../server/manager.js';
+import { interruptedThread } from './fixtures/thread-history.js';
 
 const threadId = '11111111-1111-4111-8111-111111111111';
 const otherId = '22222222-2222-4222-8222-222222222222';
-const thread = id => ({ thread: { id, name: 'Original', cwd: 'E:\\project' } });
+const thread = id => ({ thread: interruptedThread(id, { cwd: 'E:\\project' }) });
 const quota = usedPercent => ({ rateLimits: { primary: { usedPercent }, secondary: { usedPercent: 10 } } });
 function deferred() {
   let resolve, reject;

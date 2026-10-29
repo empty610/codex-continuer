@@ -14,6 +14,7 @@ import { StateStream } from '../server/events.js';
 import { SUMMARY_BUDGET } from '../server/summary.js';
 import { TaskDetails } from '../public/task-details.js';
 import { ApprovalDetails } from '../public/approval-details.js';
+import { interruptedThread } from './fixtures/thread-history.js';
 
 const threadId = '11111111-1111-4111-8111-111111111111';
 const input = { name: 'Round two fixture', cwd: 'E:\\fixture', prompt: 'Isolated fixture only', continuous: true };
@@ -27,7 +28,7 @@ function fixture(t, store = { load: () => null, save() {} }, send = async () => 
   const rpc = new EventEmitter(); rpc.ready = true; rpc.calls = []; rpc.send = () => {}; rpc.close = () => { rpc.ready = false; };
   rpc.call = async (method, params) => {
     rpc.calls.push({ method, params });
-    if (method === 'thread/read') return { thread: { id: params.threadId, name: 'Fixture', cwd: input.cwd, status: { type: 'idle' } } };
+    if (method === 'thread/read') return { thread: interruptedThread(params.threadId, { name: 'Fixture', cwd: input.cwd }) };
     if (method === 'thread/start') return { thread: { id: 'direct-thread' } };
     if (method === 'turn/start') return { turn: { id: 'fixture-turn' } };
     return {};

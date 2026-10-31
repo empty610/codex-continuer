@@ -30,8 +30,12 @@ try {
                 if ($continuerSeen) { $continuerSeen = ''; Write-ContinuerStartupStatus 'watching' 'Codex desktop closed; waiting for next launch' }
             } elseif ($continuerKey -ne $continuerSeen -and [DateTime]::UtcNow -ge $continuerRetryAt) {
                 # Run inside this already-hidden console; LASTEXITCODE is reliable in Windows PowerShell 5.1.
-                & $NodePath $continuerLaunchPath '--auto' 1> (Join-Path $DataDir 'autostart-launch.log') 2> (Join-Path $DataDir 'autostart-error.log')
-                if ($LASTEXITCODE -ne 0) { throw 'Widget startup failed; see autostart-error.log' }
+                $continuerPreviousData = $env:CONTINUER_DATA_DIR
+                try {
+                    $env:CONTINUER_DATA_DIR = $DataDir
+                    & $NodePath $continuerLaunchPath '--auto' 1> (Join-Path $DataDir 'autostart-launch.log') 2> (Join-Path $DataDir 'autostart-error.log')
+                    if ($LASTEXITCODE -ne 0) { throw 'Widget startup failed; see autostart-error.log' }
+                } finally { $env:CONTINUER_DATA_DIR = $continuerPreviousData }
                 $continuerSeen = $continuerKey
                 Write-ContinuerStartupStatus 'launched' 'Widget started for Codex desktop'
             }

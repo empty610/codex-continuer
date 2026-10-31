@@ -107,6 +107,15 @@ test('HTTP and MCP imports share one reservation and persist one recovery delive
     const ended = await request('/api/state');
     assert.equal(ended.tasks.some(task => task.id === capped.id), false);
     assert.match(ended.logs.find(log => log.taskId === capped.id).message, /结束监测/);
+    const enabledBefore = (await request('/api/state')).settings.enabled;
+    const started = await request('/api/import', { threadId: '44444444-4444-4444-8444-444444444444', note: 'Start on add', startMonitoring: true });
+    const watching = started.tasks.find(task => task.threadId === '44444444-4444-4444-8444-444444444444');
+    assert.equal(watching.continuous, true); assert.equal(watching.status, 'monitoring');
+    assert.equal(started.settings.enabled, enabledBefore);
+    assert.equal(JSON.parse(readFileSync(join(dataDir, 'demo-state.json'), 'utf8')).tasks.find(task => task.id === watching.id).continuous, true);
+    await assert.rejects(request('/api/import', { threadId: 'not-read', startMonitoring: 'on' }), /开关/);
+    await assert.rejects(request('/api/import', { threadId: 'not-read', startMonitoring: null }), /开关/);
+    await assert.rejects(dispatch('continuer_import_session', { threadId: 'not-read', startMonitoring: true }, runtime), /startMonitoring/);
   } finally {
     if (child.exitCode === null) child.kill();
     await exited;

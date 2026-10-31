@@ -9,15 +9,17 @@ import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import access from '../server/access.cjs';
+import widgetStateModule from '../server/widget-state.cjs';
 import { pinnedFetch } from './fixtures/local-fetch.js';
 
 const executable = fileURLToPath(new URL('../node_modules/electron/dist/electron.exe', import.meta.url));
 for (const expanded of [false, true]) test(`hidden isolated widget is ready without loading unused views (expanded: ${expanded})`, { skip: process.platform !== 'win32' || !existsSync(executable), timeout: 40000 }, async () => {
   const parent = realpathSync(tmpdir()), directory = mkdtempSync(join(parent, 'continuer-widget-smoke-'));
-  writeFileSync(join(directory, 'widget-preferences.json'), JSON.stringify({ follow: false, hidden: true, expanded }));
   const trace = join(directory, 'requests.jsonl'), preload = new URL('./fixtures/widget-trace.mjs', import.meta.url);
   const probe = createServer(); await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve));
   const port = probe.address().port; await new Promise(resolve => probe.close(resolve));
+  const widgetFiles = widgetStateModule.widgetState(directory, port, true);
+  writeFileSync(widgetFiles.preferences, JSON.stringify({ follow: false, hidden: true, expanded }));
   const env = { ...process.env, CONTINUER_DATA_DIR: directory, CONTINUER_DEMO: '1', CONTINUER_PORT: String(port), PORT: String(port), ELECTRON_RUN_AS_NODE: undefined };
   const server = spawn(process.execPath, ['server/index.js', '--demo', '--observe-only'], { env: { ...env, CONTINUER_TEST_TRACE_FILE: trace, NODE_OPTIONS: `--import=${preload.href}` }, windowsHide: true, stdio: 'ignore' });
   const secureFetch = pinnedFetch(directory, true);
@@ -35,7 +37,7 @@ for (const expanded of [false, true]) test(`hidden isolated widget is ready with
     widget.stderr.on('data', chunk => { nativeErrors = (nativeErrors + chunk).slice(-2500); });
     const exited = once(widget, 'exit'); let status;
     for (let i = 0; i < 120; i++) {
-      try { status = JSON.parse(readFileSync(join(directory, 'widget-status.json'), 'utf8')); } catch {}
+      try { status = JSON.parse(readFileSync(widgetFiles.status, 'utf8')); } catch {}
       if (status?.ready || widget.exitCode !== null) break;
       await delay(75);
     }
@@ -55,7 +57,7 @@ for (const expanded of [false, true]) test(`hidden isolated widget is ready with
     assert.equal(requests.includes('/rhine-signal-loop.svg'), false, 'Hidden widgets should not load the animation');
     spawn(executable, ['--disable-gpu', 'desktop/main.cjs', '--quit'], { env, windowsHide: true, stdio: 'ignore' }).unref();
     await Promise.race([exited, delay(10000).then(() => { throw Error('Isolated widget did not quit'); })]);
-    const stopped = JSON.parse(readFileSync(join(directory, 'widget-status.json'), 'utf8'));
+    const stopped = JSON.parse(readFileSync(widgetFiles.status, 'utf8'));
     assert.equal(stopped.ready, false); assert.equal(stopped.exitReason, 'user-quit');
     if (server.exitCode === null) await Promise.race([once(server, 'exit'), delay(3000).then(() => { if (server.exitCode === null) throw Error('Widget exit left its service running'); })]);
     assert.notEqual(server.exitCode, null); assert.equal(existsSync(join(directory, 'quit-demo.request')), true);

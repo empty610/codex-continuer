@@ -11,13 +11,17 @@ function createDesktopRuntime({ load = require, processInfo = process, timing = 
   const runtimeConfig = load('../server/config.cjs');
   const logging = load('../server/logging.cjs');
   const localTls = load('../server/local-tls.cjs');
+  const { widgetState, matchesWidgetIdentity } = load('../server/widget-state.cjs');
 
   app.setName('Codex Continuer');
   const dataDir = runtimeConfig.dataDir;
+  const demo = processInfo.env.CONTINUER_DEMO === '1';
+  const widget = widgetState(dataDir, runtimeConfig.port, demo);
+  const widgetInfo = () => ({ ...runtimeConfig.appInfo(), ...widget.identity });
   mkdirSync(dataDir, { recursive: true });
   logging.installLogs(dataDir, 'widget');
-  app.setPath('userData', join(dataDir, 'desktop-profile'));
-  const preferenceFile = join(dataDir, 'widget-preferences.json');
+  app.setPath('userData', widget.profile);
+  const preferenceFile = widget.preferences;
   let prefs = { follow: true, expanded: false, hidden: false, compactSize: 256, offsets: {}, positions: {} };
   try { prefs = { ...prefs, ...JSON.parse(readFileSync(preferenceFile, 'utf8')) }; } catch {}
   let preferenceError = null;
@@ -34,22 +38,22 @@ function createDesktopRuntime({ load = require, processInfo = process, timing = 
   if (processInfo.argv.includes('--auto')) prefs.hidden = false;
   function diagnostics() {
     if (!win || win.isDestroyed() || dragging || pointerDrag?.active) return;
-    const next = JSON.stringify({ ...runtimeConfig.appInfo(), pid: processInfo.pid, ready: isReady, visible: win.isVisible(), ...state(), bounds: win.getBounds() });
-    if (next !== lastDiagnostic) { lastDiagnostic = next; try { writeFileSync(join(dataDir, 'widget-status.json'), next); } catch (error) { console.error(`挂件诊断未保存：${error.message}`); } }
+    const next = JSON.stringify({ ...widgetInfo(), pid: processInfo.pid, ready: isReady, visible: win.isVisible(), ...state(), bounds: win.getBounds() });
+    if (next !== lastDiagnostic) { lastDiagnostic = next; try { writeFileSync(widget.status, next); } catch (error) { console.error(`挂件诊断未保存：${error.message}`); } }
   }
-  const ownsInstance = app.requestSingleInstanceLock();
+  const ownsInstance = app.requestSingleInstanceLock(widget.identity);
   let quitting, shutdownComplete = false;
   if (!ownsInstance) { app.quit(); }
   else if (processInfo.argv.includes('--quit')) { app.whenReady().then(quitAll); }
   else {
-    app.on('second-instance', (_event, argv) => { if (argv.includes('--quit')) { void quitAll(); return; } if (closing) return; prefs.hidden = false; if (!argv.includes('--auto')) changeExpanded(true); save(); show(!argv.includes('--auto')); });
+    app.on('second-instance', (_event, argv, _directory, identity) => { if (!matchesWidgetIdentity(identity, widget.identity, processInfo.platform)) return; if (argv.includes('--quit')) { void quitAll(); return; } if (closing) return; prefs.hidden = false; if (!argv.includes('--auto')) changeExpanded(true); save(); show(!argv.includes('--auto')); });
     app.whenReady().then(start).catch(error => { dialog.showErrorBox(nativeText("native.continuer_could_not_start"), error.message); app.quit(); });
   }
   function quitAll() {
     if (quitting) return quitting;
     closing = true; isReady = false;
     pointerDrag?.finish(); cancelTransition(); tracker?.kill(); win?.hide();
-    try { writeFileSync(join(dataDir, 'widget-status.json'), JSON.stringify({ ...runtimeConfig.appInfo(), pid: processInfo.pid, ready: false, exitReason: 'quitting', updatedAt: Date.now() })); } catch {}
+    try { writeFileSync(widget.status, JSON.stringify({ ...widgetInfo(), pid: processInfo.pid, ready: false, exitReason: 'quitting', updatedAt: Date.now() })); } catch {}
     quitting = (async () => {
       try {
         const runtime = await import('../plugin/runtime.js');
@@ -250,7 +254,7 @@ function createDesktopRuntime({ load = require, processInfo = process, timing = 
     let rendererRestarts = 0;
     win.webContents.on('render-process-gone', (_event, detail) => {
       pointerDrag.finish(); isReady = false; lastDiagnostic = null; lastSentState = null;
-      try { writeFileSync(join(dataDir, 'widget-status.json'), JSON.stringify({ ...runtimeConfig.appInfo(), pid: processInfo.pid, ready: false, exitReason: `renderer-${detail.reason}` })); } catch {}
+      try { writeFileSync(widget.status, JSON.stringify({ ...widgetInfo(), pid: processInfo.pid, ready: false, exitReason: `renderer-${detail.reason}` })); } catch {}
       if (!closing && rendererRestarts++ < 3) setTimeout(() => { if (!closing && !win.isDestroyed()) win.reload(); }, 1000 * rendererRestarts);
     });
     win.webContents.on('did-finish-load', () => { if (isReady) show(); });
@@ -317,7 +321,7 @@ function createDesktopRuntime({ load = require, processInfo = process, timing = 
     if (!ownsInstance) return;
     if (!shutdownComplete) { event.preventDefault(); void quitAll(); return; }
     closing = true; pointerDrag?.finish(); cancelTransition(); tracker?.kill(); globalShortcut.unregisterAll(); tray?.destroy();
-    try { writeFileSync(join(dataDir, 'widget-status.json'), JSON.stringify({ ...runtimeConfig.appInfo(), pid: processInfo.pid, ready: false, exitReason: 'user-quit', updatedAt: Date.now() })); } catch {}
+    try { writeFileSync(widget.status, JSON.stringify({ ...widgetInfo(), pid: processInfo.pid, ready: false, exitReason: 'user-quit', updatedAt: Date.now() })); } catch {}
   });
   app.on('window-all-closed', () => app.quit());
   return { changeExpanded, finishTransition, show, savePosition, state, setFollow, get preferences() { return prefs; } };

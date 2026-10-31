@@ -10,19 +10,21 @@ import { storageNotice } from './storage-status.js';
 import { wakeExplanation, continuationEditor } from './task-mode.js';
 import { quotaWindow, resetCountdown } from './quota-display.js';
 import { pixelText } from './rhine-readout.js';
+import { SettingsForm } from './settings-form.js';
 
 export function mountWidget(environment = globalThis) {
   const { document, window, localStorage, Date, FormData, AbortSignal, DOMParser, getComputedStyle, setTimeout, clearTimeout, setInterval, clearInterval, fetch, Blob, URL } = environment;
   const api = createApiClient({ request: (...args) => fetch(...args) });
   const applyStaticLanguage = staticInterface(document);
   const $ = s => document.querySelector(s);
+  const settingsForm = new SettingsForm(() => $('#settings-form'));
   const bridge = window.continuerDesktop;
   const QUOTA_CYCLE_MS = 12000, QUOTA_TRANSITION_MS = 1000;
   const taskDetails = new TaskDetails(api, () => { if (viewVisible() && detailId && $('#modal').open) detail(detailId); }, error => toast(systemText(error)));
   const approvalDetails = new ApprovalDetails(api, () => render());
   let lastDesktopLanguage, desktopPreferenceError = null, rendererAnnounced = false, rendererReady = false;
   let modalRenderer = null, sessionModal = null;
-  let state, connected = true, settingsInitialized = false, lastPixelCountdown, timer, detailId;
+  let state, connected = true, lastPixelCountdown, timer, detailId;
   let sessionItems = [], sessionCursor = null, sessionLoading = false, sessionError = null, lastSessionRead = 0, lastSessionAttempt = 0;
   let windowSlot='primary', carouselTimer, swapTimer, refreshTimer, gaugeTimer, panelTimer, nativeVisible=!bridge, compactPixels=256;
   const reducedMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -157,6 +159,7 @@ export function mountWidget(environment = globalThis) {
       void bridge.control('language', value).catch(error => { lastDesktopLanguage = undefined; toast(systemText(error)); });
     }
     renderGauge();
+    settingsForm.sync(state.settings);
     if(!viewVisible() || document.body.classList.contains('collapsed')) { syncActivity(); return; }
     const buckets = Object.values(state.quota?.rateLimitsByLimitId || {}).filter(Boolean);
     if (!buckets.length && state.quota?.rateLimits) buckets.push(state.quota.rateLimits);
@@ -174,7 +177,6 @@ export function mountWidget(environment = globalThis) {
     setHtml($('#approvals'), approvalDetails.readAll(state.approvals).map(a => `<div class="approval"><strong>${tr("ui.approval_required")}</strong><p class="hint">${esc(a.reason)}</p><pre>${esc(a.command || a.method)}
 ${esc(a.cwd)}</pre>${a.requiresDetails ? `<p>${tr("ui.full_approval_details_are_not_loaded_refresh_2")}</p>` : ''}<button data-action="approve" data-id="${esc(a.id)}" data-token="${esc(a.detailToken)}" ${a.requiresDetails ? 'disabled' : ''}>${tr("ui.allow_once")}</button><button data-action="decline" data-id="${esc(a.id)}" data-token="${esc(a.detailToken)}">${tr("ui.decline")}</button></div>`).join(''));
     setHtml($('#logs'), state.logs.slice(0, 10).map(l => `<div class="log"><time>${clock(l.time)}</time><span>${esc(systemText(l))}</span></div>`).join('') || `<p class="hint">${tr("ui.no_activity_yet_2")}</p>`);
-    if (!settingsInitialized) { for (const key of ['minimumRemaining', 'pollSeconds', 'maxRounds', 'maxWakeSends']) $(`#settings-form [name=${key}]`).value = state.settings[key]; settingsInitialized = true; }
     refreshSessionsIfNeeded();
     renderSessionOptions();
     syncActivity();
@@ -260,14 +262,14 @@ ${esc(a.cwd)}</pre>${a.requiresDetails ? `<p>${tr("ui.full_approval_details_are_
       return;
     }
     b.disabled = true;
-    if (action === 'storage-retry' || action === 'storage-backup') { state = await api('/api/storage/recover', { source: action === 'storage-backup' ? 'backup' : 'retry' }); toast(tr("ui.storage_recovered_scheduling_remains_off")); }
+    if (action === 'storage-retry' || action === 'storage-backup') { state = await api('/api/storage/recover', { source: action === 'storage-backup' ? 'backup' : 'retry' }); if (action === 'storage-backup') settingsForm.sync(state.settings, { reset: true }); toast(tr("ui.storage_recovered_scheduling_remains_off")); }
     else if (action === 'refresh') { state = await api('/api/refresh', {}); toast(tr("ui.quota_sync_requested")); }
     else if (['pause', 'resume', 'complete'].includes(action)) state = await api(`/api/tasks/${encodeURIComponent(id)}`, { action });
     else if (action === 'approve' || action === 'decline') { if (action === 'approve' && !approvalDetails.ready(state.approvals.find(item => String(item.id) === id && item.detailToken === token))) throw Error(tr("ui.wait_for_the_full_approval_details_to")); state = await api('/api/approval', { id, token, decision: action === 'approve' ? 'accept' : 'decline' }); }
     render();
   } catch (error) { if ($('#modal').open) setFormError($('#error'), error); else toast(systemText(error)); } finally { b.disabled = false; } });
   document.addEventListener('change', async e => { const input = e.target; try { if (input.id === 'language') { input.disabled = true; try { state = await api('/api/settings', { language: input.value }); } finally { input.disabled = false; } } else if (input.id === 'scheduler') state = await api('/api/settings', { enabled: input.checked }); else if (input.dataset.continuous) state = await api(`/api/tasks/${encodeURIComponent(input.dataset.continuous)}`, { action: 'continuous', value: input.checked }); else if (input.id === 'follow') { applyDesktop(await bridge.control('follow', input.checked)); return; } else return; render(); } catch (error) { toast(systemText(error)); render(); } });
-  document.addEventListener('submit', async e => { e.preventDefault(); const form = e.target, values = Object.fromEntries(new FormData(form)), button = form.querySelector('[type=submit]'); button.disabled = true; setFormError($('#error'), ''); try { if (form.id === 'new-form') state = await api('/api/tasks', { ...values, continuous: values.continuous === 'on' }); else if (form.id === 'import-form') state = await api('/api/import', { threadId: form.dataset.id, note: values.note, continuationMessage: values.continuationMessage }); else if (form.id === 'message-form') { state = await api(`/api/tasks/${encodeURIComponent(form.dataset.id)}`, { action: 'message', value: values.continuationMessage }); taskDetails.clear(); } else if (form.id === 'settings-form') state = await api('/api/settings', Object.fromEntries(Object.entries(values).map(([k, v]) => [k, Number(v)]))); if (form.id !== 'settings-form') $('#modal').close(); render(); toast(form.id === 'message-form' ? tr("ui.continuation_message_saved") : tr("ui.saved")); } catch (error) { if ($('#modal').open) setFormError($('#error'), error); else toast(systemText(error)); } finally { button.disabled = false; } });
+  document.addEventListener('submit', async e => { e.preventDefault(); const form = e.target, values = Object.fromEntries(new FormData(form)), button = form.querySelector('[type=submit]'); button.disabled = true; setFormError($('#error'), ''); try { if (form.id === 'new-form') state = await api('/api/tasks', { ...values, continuous: values.continuous === 'on' }); else if (form.id === 'import-form') state = await api('/api/import', { threadId: form.dataset.id, note: values.note, continuationMessage: values.continuationMessage, startMonitoring: values.startMonitoring === 'on' }); else if (form.id === 'message-form') { state = await api(`/api/tasks/${encodeURIComponent(form.dataset.id)}`, { action: 'message', value: values.continuationMessage }); taskDetails.clear(); } else if (form.id === 'settings-form') state = await api('/api/settings', settingsForm.changes(values)); if (form.id !== 'settings-form') $('#modal').close(); render(); toast(form.id === 'message-form' ? tr("ui.continuation_message_saved") : tr("ui.saved")); } catch (error) { if ($('#modal').open) setFormError($('#error'), error); else toast(systemText(error)); } finally { button.disabled = false; } });
   function setSize(value) {
     compactPixels=Math.max(160,Math.min(420,Math.round(Number(value)||256)));
     document.documentElement.style.setProperty('--compact-size',`${compactPixels}px`);

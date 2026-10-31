@@ -16,7 +16,7 @@ export function createApiRouter({ manager, health, stream, rpc, demo, summary, s
     ['/api/tasks', input => manager.create(input)],
     ['/api/import', input => {
       if (input.note !== undefined && input.prompt !== undefined) throw new ClientError(textMessage("error.note_alias_conflict"));
-      return manager.importThread(input.threadId, input.note ?? input.prompt, input.continuationMessage);
+      return manager.importThread(input.threadId, input.note ?? input.prompt, input.continuationMessage, { startMonitoring: input.startMonitoring });
     }],
     ['/api/approval', input => manager.approve(input.id, input.decision, input.token)],
   ]);

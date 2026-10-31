@@ -244,7 +244,8 @@ export class Manager extends EventEmitter {
     if (input.enabled === true) this.activate();
   }
   async listThreads(cursor = null) { await this.rpc.connect?.(); return this.rpc.call('thread/list', { limit: 30, sortKey: 'updated_at', cursor }); }
-  async importThread(id, note = '', continuationMessage = '') {
+  async importThread(id, note = '', continuationMessage = '', { startMonitoring = false } = {}) {
+    if (typeof startMonitoring !== 'boolean') throw new ClientError(textMessage("error.invalid_switch_value"));
     if (this.state.tasks.some(t => t.threadId === id)) throw new ClientError(textMessage("error.this_chat_has_already_been_added"));
     if (this.importingThreads.has(id)) throw new ClientError(textMessage("error.this_chat_is_being_added_do_not_import"));
     if (this.state.tasks.length >= 100) throw new ClientError(textMessage("error.up_to_records_are_supported_end_unused_work"));
@@ -257,7 +258,10 @@ export class Manager extends EventEmitter {
       if (this.state.tasks.some(t => t.threadId === id)) throw new ClientError(textMessage("error.this_chat_has_already_been_added"));
       if (this.state.tasks.length >= 100) throw new ClientError(textMessage("error.up_to_records_are_supported_end_unused_work"));
       const task = createMonitorTask(id, thread, note, continuationMessage);
-      this.state.tasks.unshift(task); this.log(textMessage("log.chat_added", { name: task.name })); this.changed(); return task;
+      if (startMonitoring) taskModel(task).action(task, 'resume', undefined, { sending: false, maxWakeSends: this.state.settings.maxWakeSends });
+      this.state.tasks.unshift(task); this.log(textMessage("log.chat_added", { name: task.name })); this.changed();
+      if (startMonitoring) this.activate();
+      return task;
     } finally { this.importingThreads.delete(id); }
   }
 }

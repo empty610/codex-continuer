@@ -7,6 +7,7 @@ export function publicFiles(root = '.') {
   const visit = directory => {
     for (const item of readdirSync(join(root, directory), { withFileTypes: true })) {
       const name = directory + '/' + item.name;
+      if (/assessment|^\.review/i.test(item.name)) continue;
       if (item.isSymbolicLink()) throw Error('Public source must not contain symlinks: ' + name);
       if (item.isDirectory()) visit(name);
       else if (item.isFile() && !name.endsWith('.exe')) files.push(name);

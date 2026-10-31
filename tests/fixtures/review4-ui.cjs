@@ -22,9 +22,7 @@ app.whenReady().then(async () => {
     server = createServer(async (req, res) => {
       const url = new URL(req.url, 'http://127.0.0.1');
       if (url.pathname.startsWith('/fixture/')) {
-        const page = url.pathname.endsWith('page') ? 'index.html' : 'widget.html';
-        const html = fs.readFileSync(path.join(root, 'public', page), 'utf8').replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(html); return;
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end('<!doctype html><html><head></head><body></body></html>'); return;
       }
       if (url.pathname.startsWith('/api/')) {
         let body = ''; for await (const chunk of req) body += chunk;
@@ -46,6 +44,22 @@ app.whenReady().then(async () => {
         webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } });
       win.webContents.on('console-message', details => { if (details.level === 'error') errors.push(details.message); });
       await win.loadURL(`http://127.0.0.1:${server.address().port}/fixture/${surface}`);
+      const html = fs.readFileSync(path.join(root, 'public', surface === 'page' ? 'index.html' : 'widget.html'), 'utf8');
+      win.webContents.debugger.attach();
+      const command = (method, params) => win.webContents.debugger.sendCommand(method, params);
+      const { result: globalObject } = await command('Runtime.evaluate', { expression: 'globalThis' });
+      const { result, exceptionDetails } = await command('Runtime.callFunctionOn', {
+        objectId: globalObject.objectId,
+        functionDeclaration: `function (html) {
+          const parsed = new DOMParser().parseFromString(html, 'text/html');
+          parsed.querySelectorAll('script').forEach(script => script.remove());
+          document.documentElement.replaceWith(document.importNode(parsed.documentElement, true));
+          return document.querySelectorAll('script').length;
+        }`,
+        arguments: [{ value: html }], returnByValue: true,
+      });
+      assert.equal(exceptionDetails, undefined); assert.equal(result.value, 0);
+      win.webContents.debugger.detach();
       await win.webContents.executeJavaScript(`(async () => {
         Object.defineProperty(document,'hidden',{value:false,configurable:true});
         window.createSource = () => { const source={close(){}}; window.testFeed=source; setTimeout(()=>source.onmessage({data:${JSON.stringify(JSON.stringify(state))}}),0); return source; };

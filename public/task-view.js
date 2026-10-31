@@ -23,7 +23,7 @@ export const isTaskActive = task => activeStatuses.has(task.status);
 
 export function taskStatusLabel(task) {
   if (task.status === 'monitoring') return tr("ui.monitoring");
-  if (task.waitReason === 'desktop') return tr("ui.waiting_for_delivery");
+  if (task.status === 'waiting' && task.waitReason === 'desktop') return tr("ui.waiting_for_delivery");
   if (task.status === 'waiting' && ['writer', 'thread'].includes(task.waitReason)) return tr("ui.waiting_for_chat");
   return statusText[task.status] ? tr(statusText[task.status]) : task.status || '';
 }

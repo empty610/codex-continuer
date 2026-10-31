@@ -11,6 +11,11 @@ test('public privacy guard rejects live identifiers in every exported text surfa
   t.after(() => { assert.equal(dirname(realpathSync(directory)), parent); rmSync(directory, { recursive: true, force: true }); });
   for (const name of publicFiles()) { const target = join(directory, name); mkdirSync(dirname(target), { recursive: true }); copyFileSync(name, target); }
   assert.ok(checkPublic(directory).files > 100);
+  const reviewDirectory = join(directory, 'docs/.review-private'); mkdirSync(reviewDirectory);
+  writeFileSync(join(reviewDirectory, 'REPORT.md'), 'Local review only');
+  writeFileSync(join(directory, 'tests/assessment.md'), 'Local assessment only');
+  assert.equal(publicFiles(directory).some(name => /assessment|\.review/i.test(name)), false);
+  assert.ok(publicFiles(directory).includes('docs/project-evaluation.md'));
   const credentialFile = join(directory, 'tests/quota-wake.test.js'), credentialOriginal = readFileSync(credentialFile);
   writeFileSync(credentialFile, credentialOriginal.toString() + '\nBearer ' + 'a'.repeat(64));
   assert.throws(() => checkPublic(directory), /local Bearer credential/);

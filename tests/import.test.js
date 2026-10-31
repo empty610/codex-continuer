@@ -47,6 +47,31 @@ test('20 parallel imports create one paused record and one message per quota rec
   assert.deepEqual(sends, [threadId, threadId]); assert.equal(task.sentCount, 2);
 });
 
+test('optional monitoring is saved with the imported record and waits for a recovery episode', async () => {
+  const { m, saves, sends } = setup(); m.observationOnly = true;
+  const task = await m.importThread(threadId, 'Local note', 'Continue this', { startMonitoring: true });
+  assert.equal(task.continuous, true); assert.equal(task.status, 'monitoring'); assert.equal(m.observationOnly, false);
+  assert.equal(saves.length, 1); assert.equal(saves[0].tasks[0].continuous, true);
+  assert.equal(saves[0].tasks[0].wake.armed, false);
+  m.setQuota(quota(0)); await m.tick(); assert.deepEqual(sends, []);
+  m.setQuota(quota(100)); await m.tick(); m.setQuota(quota(0)); await m.tick();
+  assert.deepEqual(sends, [threadId]);
+});
+
+test('enabling monitoring on import respects global pause, invalid values and failed persistence', async () => {
+  const { m, reads, saves, sends } = setup();
+  for (const startMonitoring of ['on', null, 1]) await assert.rejects(m.importThread(threadId, '', '', { startMonitoring }), /开关/);
+  assert.deepEqual(reads, []); assert.deepEqual(saves, []);
+  m.updateSettings({ enabled: false });
+  const task = await m.importThread(threadId, '', '', { startMonitoring: true });
+  m.setQuota(quota(100)); await m.tick(); m.setQuota(quota(0)); await m.tick();
+  assert.equal(task.continuous, true); assert.equal(m.state.settings.enabled, false); assert.deepEqual(sends, []);
+  const failed = setup(); failed.m.observationOnly = true; failed.m.store.save = () => { throw Error('Fixture disk failure'); };
+  await assert.rejects(failed.m.importThread(threadId, '', '', { startMonitoring: true }), /disk failure/);
+  assert.equal(failed.m.observationOnly, true); assert.equal(failed.m.persistence.status, 'error');
+  failed.m.setQuota(quota(0)); await failed.m.tick(); assert.deepEqual(failed.sends, []);
+});
+
 test('a failed read releases the import reservation and permits a retry', async () => {
   const gate = deferred(); let attempts = 0;
   const { m, reads, saves } = setup(id => ++attempts === 1 ? gate.promise : Promise.resolve(thread(id)));

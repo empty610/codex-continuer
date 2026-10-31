@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { basename, join } from 'node:path';
 import { createLifecycle } from '../plugin/lifecycle.js';
+import widgetStateModule from '../server/widget-state.cjs';
 
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 const unavailable = () => Object.assign(Error('No listener'), { cause: { code: 'ECONNREFUSED' } });
@@ -23,7 +24,10 @@ function fixture(overrides = {}) {
   const lifecycle = createLifecycle(host);
   return { lifecycle, host, state, info, launches, reads, diagnostics, set exited(value) { exited = value; }, get exited() { return exited; }, get clears() { return clears; }, get now() { return clock; } };
 }
-const readyWidget = f => f.diagnostics.set('widget-status.json', { ready: true, buildId: f.info.buildId, pid: 123, follow: false });
+const readyWidget = f => {
+  const files = widgetStateModule.widgetState(f.host.dataDir, f.host.port, f.host.demo || false);
+  f.diagnostics.set(basename(files.status), { ...files.identity, ready: true, buildId: f.info.buildId, pid: 123, follow: false });
+};
 
 test('constructing a lifecycle does no I/O and a warm query reuses the verified snapshot without altering scheduling', async () => {
   const f = fixture(); assert.equal(f.reads.length, 0); assert.equal(f.launches.length, 0);
@@ -182,6 +186,19 @@ test('widget readiness requires a live process from this build and a failed open
   await assert.rejects(f.lifecycle.openWidget(), { code: 'WIDGET_START_TIMEOUT' });
   readyWidget(f); assert.equal((await f.lifecycle.openWidget()).mode, 'independent');
   assert.equal(f.launches.length, 3); assert.ok(f.launches.every(item => item.child.listenerCount('error') === 1));
+});
+
+test('widget readiness rejects another mode, origin, directory and legacy diagnostics', async () => {
+  for (const patch of [{ demo: true }, { origin: 'https://127.0.0.1:4318' }, { dataDir: 'other' }, { dataDir: undefined }]) {
+    const f = fixture({ widgetAttempts: 1 }); readyWidget(f);
+    Object.assign(f.diagnostics.get('widget-status.json'), patch);
+    await assert.rejects(f.lifecycle.openWidget(), { code: 'WIDGET_START_TIMEOUT' });
+  }
+  const demo = fixture({ demo: true, port: 4318, widgetAttempts: 1 });
+  demo.diagnostics.set('widget-status.json', { ready: true, buildId: demo.info.buildId, pid: 123, follow: false });
+  await assert.rejects(demo.lifecycle.openWidget(), { code: 'WIDGET_START_TIMEOUT' });
+  readyWidget(demo);
+  assert.equal((await demo.lifecycle.openWidget()).ready, true);
 });
 
 test('widget spawn errors release the opening promise without starting a watcher', async () => {

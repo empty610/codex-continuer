@@ -90,8 +90,10 @@ test('shared forms retain field contracts and never translate imported chat name
       const form = monitorImportForm('\"<id>', { layout, thread: { name: '继续处理中文项目', cwd: '<private>' } });
       assert.match(form, /name="continuationMessage" maxlength="12000"/);
       assert.match(form, /name="note" maxlength="12000"/);
+      assert.match(form, /name="startMonitoring" type="checkbox"/);
+      assert.doesNotMatch(form, /name="startMonitoring"[^>]*checked/);
       assert.match(form, /继续处理中文项目/); assert.doesNotMatch(form, /<private>|"<id>/);
-      if (language === 'en') assert.match(form, /Continuation message/);
+      if (language === 'en') { assert.match(form, /Continuation message/); assert.match(form, /Start monitoring after adding/); }
     }
   }
 });
@@ -125,7 +127,16 @@ for (const [layout, createView] of [['page', pageView], ['widget', widgetView]])
     await view.action(layout === 'page' ? 'choose-thread' : 'select-session', 'chat');
     await view.submit('import-form', { note: 'Local note', continuationMessage: 'Continue this' }, { id: 'chat' });
     const imported = view.apiCalls.find(call => call.path === '/api/import');
-    assert.deepEqual(JSON.parse(imported.options.body), { threadId: 'chat', note: 'Local note', continuationMessage: 'Continue this' });
+    assert.deepEqual(JSON.parse(imported.options.body), { threadId: 'chat', note: 'Local note', continuationMessage: 'Continue this', startMonitoring: false });
+    view.visible(false); if (layout === 'widget') view.desktop({ visible: false });
+  });
+
+  test(`${layout} can enable monitoring while adding a chat`, async () => {
+    const state = snapshot([]), view = createView({ request: async () => state });
+    await view.flush(); view.message(0, state); await view.action(layout === 'page' ? 'choose-thread' : 'select-session', 'chat');
+    await view.submit('import-form', { note: 'Local note', continuationMessage: 'Continue this', startMonitoring: 'on' }, { id: 'chat' });
+    const imported = view.apiCalls.find(call => call.path === '/api/import');
+    assert.deepEqual(JSON.parse(imported.options.body), { threadId: 'chat', note: 'Local note', continuationMessage: 'Continue this', startMonitoring: true });
     view.visible(false); if (layout === 'widget') view.desktop({ visible: false });
   });
 }

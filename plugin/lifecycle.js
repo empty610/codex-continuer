@@ -2,6 +2,8 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { assertServiceIdentity, runtimeError, samePath, serviceUnavailable } from './local-client.js';
 import { message, messageFields } from '../public/message.js';
+import widgetStateModule from '../server/widget-state.cjs';
+const { widgetState, matchesWidgetIdentity } = widgetStateModule;
 
 // The lifecycle knows process roles and readiness. Host I/O is supplied by the
 // runtime adapter; constructing it never reads state or starts a process.
@@ -9,6 +11,7 @@ export function createLifecycle({ root, dataDir, port, demo = false, platform = 
   appInfo, request, launch, exists, diagnostic, alive, quit, shutdown,
   wait = delay, now = () => performance.now(), serviceTimeoutMs = 18000, widgetAttempts = 60 }) {
   let starting, opening, stopping, generation = 0;
+  const widgetFiles = widgetState(dataDir, port, demo);
   const assertOpen = (expected = generation) => {
     if (expected !== generation || stopping || quit.requested()) throw runtimeError('EXIT_REQUESTED', 'runtime.exited');
   };
@@ -86,8 +89,8 @@ export function createLifecycle({ root, dataDir, port, demo = false, platform = 
     try {
       for (let attempt = 0; attempt < widgetAttempts; attempt++) {
         assertOpen(expected); if (spawnError) throw spawnError;
-        const widget = diagnostic(join(dataDir, 'widget-status.json'));
-        if (widget?.ready && widget.buildId === appInfo().buildId && alive(widget.pid)) {
+        const widget = diagnostic(widgetFiles.status);
+        if (widget?.ready && widget.buildId === appInfo().buildId && matchesWidgetIdentity(widget, widgetFiles.identity, platform) && alive(widget.pid)) {
           return { launched: true, ready: true, mode: widget.follow ? 'follow-codex' : 'independent', ...messageFields(message('runtime.widget_ready')) };
         }
         await wait(150);

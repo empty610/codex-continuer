@@ -25,7 +25,7 @@ function interfaceView(surface, { reducedMotion = true, threads = async () => ({
   const document = { hidden: false, activeElement: null, body: { classList: classes(surface === 'widget' ? ['collapsed'] : []) }, documentElement: { style: { setProperty() {} } }, querySelector, querySelectorAll: () => [], importNode: value => value, addEventListener(name, callback) { events.set(name, callback); } };
   class ViewDate extends Date { constructor(...args) { super(...(args.length ? args : [now])); } static now() { return now; } }
   class ViewFormData {
-    constructor(form) { this.values = form.values || {}; }
+    constructor(form) { this.values = form === element('#settings-form') ? Object.fromEntries(['minimumRemaining', 'pollSeconds', 'maxRounds', 'maxWakeSends'].map(key => [key, element(`#settings-form [name=${key}]`).value])) : form.values || {}; }
     [Symbol.iterator]() { return Object.entries(this.values)[Symbol.iterator](); }
   }
   const context = { document, window: { continuerDesktop: surface === 'widget' ? bridge : undefined, matchMedia: () => ({ matches: reducedMotion }), addEventListener() {} }, localStorage: { getItem: () => null, setItem() {} }, Date: ViewDate, FormData: ViewFormData,
@@ -45,6 +45,7 @@ function interfaceView(surface, { reducedMotion = true, threads = async () => ({
     page(page) { return events.get('click')({ target: { closest: () => ({ dataset: { page } }) } }); },
     submit(id, values, dataset = {}) {
       const form = element('#' + id); Object.assign(form, { id, values, dataset });
+      if (id === 'settings-form') for (const [key, value] of Object.entries(values)) element(`#settings-form [name=${key}]`).value = String(value);
       return events.get('submit')({ target: form, preventDefault() {} });
     },
     visible(value) { document.hidden = !value; events.get('visibilitychange')?.(); },

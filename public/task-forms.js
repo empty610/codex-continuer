@@ -49,7 +49,8 @@ export function monitorImportForm(threadId, { layout = 'page', thread = null } =
     </label>
     <label class="${fieldClass}">${tr("ui.monitoring_note_optional_local_only")}<textarea name="note" maxlength="12000" ${thread ? tr("ui.placeholder_example_project_to_resume") : ''}></textarea>
     </label>
-    <p class="${hint}">${thread ? tr("ui.monitoring_stays_paused_after_adding") : tr("ui.monitoring_stays_paused_after_import")}${esc(wakeExplanation)}</p>
+    <label class="${page ? 'check-label' : 'check'}"><input name="startMonitoring" type="checkbox">${tr("ui.start_monitoring_after_adding")}</label>
+    <p class="${hint}">${tr("ui.import_monitoring_choice_hint")}${esc(wakeExplanation)}</p>
     ${actions}
   </form>`;
 }

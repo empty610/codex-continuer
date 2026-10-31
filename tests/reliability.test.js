@@ -185,10 +185,13 @@ test('service leases prevent duplicate writers and release only their own lock',
 test('health reports previous crashes, BOM diagnostics and actual process liveness', t => {
   const directory = temporary(t); writeFileSync(join(directory, 'service-status.json'), JSON.stringify({ status: 'running' }));
   writeFileSync(join(directory, 'autostart-preferences.json'), '\uFEFF{"enabled":false}');
-  writeFileSync(join(directory, 'widget-status.json'), JSON.stringify({ pid: process.pid, ready: true }));
+  writeFileSync(join(directory, 'widget-status.json'), JSON.stringify({ pid: process.pid, ready: false }));
+  writeFileSync(join(directory, 'demo-widget-status.json'), JSON.stringify({ pid: process.pid, ready: true }));
   const { m } = manager({ load: () => null, save: () => {} }); const health = new Health(directory, m, new StateStream());
   assert.equal(health.snapshot().previousExit.unexpected, true); assert.equal(health.snapshot().autostart.enabled, false);
-  assert.equal(health.snapshot().widget.ready, true); health.record('stopped', 'manual');
+  assert.equal(health.snapshot().widget.ready, true);
+  m.demo = false; assert.equal(health.snapshot().widget.ready, false); m.demo = true;
+  health.record('stopped', 'manual');
   assert.equal(diagnostic(join(directory, 'service-status.json')).reason, 'manual'); m.stop();
 });
 

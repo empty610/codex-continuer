@@ -12,3 +12,8 @@ tls-*.json
 *.pfx
 *.p12
 /source-manifest.json
+
+# Local assessment and review materials stay outside commits.
+.review*/
+[Aa][Ss][Ss][Ee][Ss][Ss][Mm][Ee][Nn][Tt]*/
+*[Aa][Ss][Ss][Ee][Ss][Ss][Mm][Ee][Nn][Tt]*.md

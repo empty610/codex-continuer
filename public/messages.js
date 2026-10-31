@@ -1,5 +1,17 @@
 // Stable IDs own both translations; literal source text is never a lookup key.
 export const messages = Object.freeze({
+  "ui.start_monitoring_after_adding": {
+    "zh": "加入后开始监测",
+    "en": "Start monitoring after adding"
+  },
+  "ui.import_monitoring_choice_hint": {
+    "zh": "不勾选则保持暂停。后台调度暂停时，请先开启调度。",
+    "en": "Leave unchecked to add paused. If background scheduling is paused, enable it to begin monitoring. "
+  },
+  "ui.chat_added_monitoring_enabled": {
+    "zh": "已加入工作并开启监测",
+    "en": "Chat added with monitoring enabled"
+  },
   "ui.request_failed": {
     "zh": "请求失败",
     "en": "Request failed"

@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import config from './config.cjs';
+import widgetStateModule from './widget-state.cjs';
 
 export function diagnostic(file) {
   try { if (statSync(file).size > 65536) return null; return JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, '')); } catch { return null; }
@@ -18,7 +19,7 @@ export class Health {
     try { writeFileSync(this.file, JSON.stringify({ ...config.appInfo(), pid: process.pid, status, reason, startedAt: this.startedAt, updatedAt: Date.now() }), { mode: 0o600 }); } catch {}
   }
   snapshot() {
-    const widget = diagnostic(join(this.dataDir, 'widget-status.json'));
+    const widget = diagnostic(widgetStateModule.widgetState(this.dataDir, config.port, this.manager.demo).status);
     const watcher = diagnostic(join(this.dataDir, 'autostart-status.json'));
     const preferences = diagnostic(join(this.dataDir, 'autostart-preferences.json'));
     return { ...config.appInfo(), pid: process.pid, startedAt: this.startedAt, uptimeSeconds: Math.floor((Date.now() - this.startedAt) / 1000),

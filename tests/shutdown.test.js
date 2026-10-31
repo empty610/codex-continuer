@@ -25,25 +25,64 @@ function fixture(t) {
 
 test('exit latches before stopping the watcher and shuts down only its service', async t => {
   const f = fixture(t); await stopBackground(f.options);
-  assert.deepEqual(f.calls, [['watcher', undefined], '/api/state', '/api/shutdown', ['service', 123]]);
+  assert.deepEqual(f.calls, [['watcher', undefined], '/api/state', ['capture', 123], '/api/shutdown', ['service', 123]]);
   assert.equal(exitState.requested(f.options.dataDir), true);
 });
 
 test('shutdown timeouts still run verified process cleanup', async t => {
   const f = fixture(t); f.options.request = async () => { throw Object.assign(Error('not reachable'), { cause: { code: 'ECONNREFUSED' } }); };
-  await stopBackground(f.options); assert.deepEqual(f.calls, [['watcher', undefined], ['service', 123]]);
+  await stopBackground(f.options); assert.deepEqual(f.calls, [['watcher', undefined], ['capture', 123], ['service', 123]]);
 });
 
 test('a service on another data directory never receives a shutdown request', async t => {
   const f = fixture(t); f.options.request = async path => { assert.notEqual(path, '/api/shutdown'); return { app: 'other' }; };
-  await stopBackground(f.options); assert.deepEqual(f.calls, [['watcher', undefined], ['service', 123]]);
+  await stopBackground(f.options); assert.deepEqual(f.calls, [['watcher', undefined], ['capture', 123], ['service', 123]]);
 });
 
 test('demo exit leaves live markers and the startup watcher alone', async t => {
-  const f = fixture(t); f.options.demo = true; f.options.cleanup = async phase => { assert.equal(phase, 'service'); };
+  const f = fixture(t); f.options.demo = true; f.options.cleanup = async phase => { assert.ok(['capture', 'service'].includes(phase)); };
   f.options.request = async path => path === '/api/shutdown' ? {} : { app: 'codex-continuer', diagnostics: { projectRoot: f.options.root, dataDir: f.options.dataDir, pid: 123 } };
   f.options.isAlive = () => false; await stopBackground(f.options);
   assert.equal(exitState.requested(f.options.dataDir, true), true); assert.equal(exitState.requested(f.options.dataDir), false);
+});
+
+test('exit cleans captured descendants even after the service exits gracefully', async t => {
+  const f = fixture(t), snapshot = [{ pid: 123 }, { pid: 456 }]; let captured = false, cleaned = false;
+  const request = f.options.request;
+  f.options.request = async (...args) => { if (args[0] === '/api/shutdown') assert.equal(captured, true); return request(...args); };
+  f.options.cleanup = async (phase, pid, saved) => {
+    if (phase === 'capture') { captured = true; return snapshot; }
+    if (phase === 'service') { assert.equal(f.options.isAlive(pid), false); assert.equal(saved, snapshot); cleaned = true; }
+  };
+  await stopBackground(f.options); assert.equal(cleaned, true);
+});
+
+test('snapshot failure still attempts graceful shutdown and verified force cleanup', async t => {
+  const f = fixture(t), cleanup = f.options.cleanup;
+  f.options.cleanup = async (...args) => { if (args[0] === 'capture') throw Error('snapshot unavailable'); return cleanup(...args); };
+  await assert.rejects(stopBackground(f.options), /snapshot unavailable/);
+  assert.ok(f.calls.includes('/api/shutdown')); assert.deepEqual(f.calls.at(-1), ['service', 123]);
+});
+
+test('full exit removes orphaned descendants without stopping an unrelated process', { skip: process.platform !== 'win32', timeout: 30000 }, async t => {
+  const dataDir = directory(t), root = join(dataDir, '插件 with spaces'); mkdirSync(join(root, 'server'), { recursive: true }); mkdirSync(join(root, 'plugin'));
+  const script = join(root, 'server/index.js'), childFile = join(dataDir, 'child.json');
+  copyFileSync(new URL('./fixtures/shutdown-owned-service.cjs', import.meta.url), script);
+  copyFileSync(new URL('../plugin/stop-owned.ps1', import.meta.url), join(root, 'plugin/stop-owned.ps1'));
+  const server = spawn(process.execPath, [script, childFile], { windowsHide: true, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] }), exited = once(server, 'exit');
+  let childPid;
+  t.after(() => { if (server.exitCode === null) server.kill(); if (childPid && alive(childPid)) process.kill(childPid); });
+  for (let i = 0; i < 40; i++) { try { childPid = JSON.parse(readFileSync(childFile, 'utf8')).pid; break; } catch { await delay(50); } }
+  assert.ok(childPid);
+  let orphanObserved = false;
+  await stopBackground({ root, dataDir, demo: true, request: async path => {
+    if (path === '/api/state') return { app: 'codex-continuer', diagnostics: { projectRoot: root, dataDir, pid: server.pid } };
+    server.send('exit'); await exited;
+    orphanObserved = alive(childPid);
+    return {};
+  } });
+  for (let i = 0; i < 30 && alive(childPid); i++) await delay(50);
+  assert.equal(orphanObserved, true); assert.equal(alive(childPid), false); assert.equal(alive(process.pid), true);
 });
 
 test('passive reads and automatic opening do not restart an exited app; manual opening clears the latch', t => {
@@ -67,6 +106,16 @@ test('verified force cleanup terminates an owned service tree and refuses unrela
   assert.ok(childPid);
   await assert.rejects(execute('powershell.exe', args(process.pid), { windowsHide: true, timeout: 10000 }), /Refusing to stop/);
   assert.equal(alive(process.pid), true);
+  const captureArgs = args(server.pid); captureArgs[captureArgs.indexOf('service')] = 'capture';
+  const snapshot = JSON.parse((await execute('powershell.exe', captureArgs, { windowsHide: true, timeout: 10000 })).stdout);
+  assert.ok(snapshot.some(item => item.pid === childPid));
+  // Recycled PIDs can have the same executable and command line; creation time distinguishes them.
+  for (const item of snapshot) item.created = '0';
+  await new Promise((resolve, reject) => {
+    const cleaner = execFile('powershell.exe', [...args(server.pid), '-ReadSnapshot'], { windowsHide: true, timeout: 10000 }, error => error ? reject(error) : resolve());
+    cleaner.stdin.end(JSON.stringify(snapshot));
+  });
+  assert.equal(alive(server.pid), true); assert.equal(alive(childPid), true);
   await execute('powershell.exe', args(server.pid), { windowsHide: true, timeout: 10000 }); await exited;
   for (let i = 0; i < 30 && alive(childPid); i++) await delay(50);
   assert.equal(alive(childPid), false);

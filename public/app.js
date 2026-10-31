@@ -9,12 +9,14 @@ import { VisibleFeed, setHtml } from './view-lifecycle.js';
 import { ApprovalDetails } from './approval-details.js';
 import { storageNotice } from './storage-status.js';
 import { wakeExplanation, continuationEditor } from './task-mode.js';
+import { SettingsForm } from './settings-form.js';
 
 export function mountPage(environment = globalThis) {
   const { document, window, localStorage, Date, FormData, AbortSignal, DOMParser, getComputedStyle, setTimeout, clearTimeout, setInterval, clearInterval, fetch, Blob, URL } = environment;
   const api = createApiClient({ request: (...args) => fetch(...args) });
   const applyStaticLanguage = staticInterface(document);
   const $ = selector => document.querySelector(selector);
+  const settingsForm = new SettingsForm(() => $('#settings-form'));
   document.querySelectorAll('[data-icon]').forEach(el => { el.innerHTML = icon(el.dataset.icon); });
   const labels = () => ({ overview: tr("ui.overview"), tasks: tr("ui.work"), quota: tr("ui.quota_monitor"), logs: tr("ui.activity_log"), settings: tr("ui.settings") });
   const taskDetails = new TaskDetails(api, () => { if (!document.hidden && selectedTask) renderDetail(selectedTask); }, error => toast(systemText(error)));
@@ -124,6 +126,7 @@ ${esc(a.cwd)}</pre>${a.requiresDetails ? `<p>${tr("ui.full_approval_details_are_
     $('#footer-update').textContent = tr("ui.every_sec", { p0: state.settings.pollSeconds, p1: state.sampledAt ? tr("ui.updated_at", { p0: time(state.sampledAt) }) : tr("ui.quota_data_unknown") });
     // Preserve form input while background events arrive.
     if (!languageChanged && page === 'settings' && $('#settings-form')) {
+      settingsForm.sync(state.settings);
       const control = $('#settings-form .switch');
       control.classList.toggle('on', state.settings.enabled);
       control.setAttribute('aria-checked', String(state.settings.enabled));
@@ -136,7 +139,8 @@ ${esc(a.cwd)}</pre>${a.requiresDetails ? `<p>${tr("ui.full_approval_details_are_
     else if (page === 'logs') html = `${heading(tr("ui.activity_log"), tr("ui.shows_the_latest_events_export_up_to"), `<button data-action="export">${tr("ui.export_logs")}</button>`)}<div class="card">${state.logs.length ? `<table class="log-table"><thead><tr><th>${tr("ui.time")}</th><th>${tr("ui.type")}</th><th>${tr("ui.activity")}</th></tr></thead><tbody>${state.logs.map(l => `<tr><td>${new Date(l.time).toLocaleDateString(locale())} ${time(l.time)}</td><td><span class="badge ${l.type === 'success' ? 'completed' : l.type === 'warning' ? 'waiting' : ''}">${({ success: tr("ui.success"), warning: tr("ui.attention"), info: tr("ui.info") })[l.type]}</span></td><td>${esc(systemText(l))}</td></tr>`).join('')}</tbody></table>` : empty(tr("ui.no_activity_yet"), tr("ui.scheduling_activity_appears_here_after_you_add"))}</div>`;
     else html = settings();
     setHtml(main, html);
-    if (draft) for (const [name, value] of draft) { const input = $('#settings-form').elements.namedItem(name); if (input) input.value = value; }
+    if (draft) settingsForm.restore(draft);
+    if (page === 'settings') settingsForm.sync(state.settings);
     if (modal.open && selectedTask) renderDetail(selectedTask);
   }
   function openModal(html) { modalRenderer = null; importList = null; selectedTask = null; $('#modal-body').innerHTML = html; if (!modal.open) modal.showModal(); }
@@ -199,7 +203,7 @@ ${esc(a.cwd)}</pre>${a.requiresDetails ? `<p>${tr("ui.full_approval_details_are_
       }
       if (action === 'export') { const logs = await api('/api/logs'); const blob = new Blob([JSON.stringify(logs.logs, null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'continuer-logs.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); return; }
       button.disabled = true;
-      if (action === 'storage-retry' || action === 'storage-backup') { state = await api('/api/storage/recover', { source: action === 'storage-backup' ? 'backup' : 'retry' }); toast(tr("ui.storage_recovered_scheduling_remains_off")); }
+      if (action === 'storage-retry' || action === 'storage-backup') { state = await api('/api/storage/recover', { source: action === 'storage-backup' ? 'backup' : 'retry' }); if (action === 'storage-backup') settingsForm.sync(state.settings, { reset: true }); toast(tr("ui.storage_recovered_scheduling_remains_off")); }
       else if (action === 'refresh') { state = await api('/api/refresh', {}); toast(state.connection.status === 'connected' ? tr("ui.quota_synced") : tr("ui.connection_failed_check_the_notice")); }
       else if (action === 'scheduler') { state = await api('/api/settings', { enabled: !state.settings.enabled }); toast(state.settings.enabled ? tr("ui.scheduling_enabled") : tr("ui.scheduling_paused")); }
       else if (action === 'continuous') { state = await api(`/api/tasks/${id}`, { action, value: !state.tasks.find(t => t.id === id).continuous }); }
@@ -215,9 +219,9 @@ ${esc(a.cwd)}</pre>${a.requiresDetails ? `<p>${tr("ui.full_approval_details_are_
     const submit = form.querySelector('[type="submit"],button.primary'); submit.disabled = true;
     try {
       if (form.id === 'task-form') { state = await api('/api/tasks', { ...values, continuous: values.continuous === 'on' }); modal.close(); toast(tr("ui.work_created")); }
-      else if (form.id === 'import-form') { state = await api('/api/import', { ...values, threadId: form.dataset.id }); modal.close(); toast(tr("ui.chat_imported_monitoring_stays_paused")); }
+      else if (form.id === 'import-form') { const startMonitoring = values.startMonitoring === 'on'; state = await api('/api/import', { ...values, startMonitoring, threadId: form.dataset.id }); modal.close(); toast(tr(startMonitoring ? "ui.chat_added_monitoring_enabled" : "ui.chat_imported_monitoring_stays_paused")); }
       else if (form.id === 'message-form') { state = await api(`/api/tasks/${encodeURIComponent(form.dataset.id)}`, { action: 'message', value: values.continuationMessage }); taskDetails.clear(); modal.close(); toast(tr("ui.continuation_message_saved")); }
-      else if (form.id === 'settings-form') { state = await api('/api/settings', Object.fromEntries(Object.entries(values).map(([k, v]) => [k, Number(v)]))); document.activeElement?.blur(); toast(tr("ui.settings_saved")); }
+      else if (form.id === 'settings-form') { state = await api('/api/settings', settingsForm.changes(values)); document.activeElement?.blur(); toast(tr("ui.settings_saved")); }
       render();
     } catch (error) { const errorEl = form.querySelector('.form-error'); if (errorEl) setFormError(errorEl, error); else toast(systemText(error)); }
     finally { submit.disabled = false; }

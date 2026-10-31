@@ -6,7 +6,7 @@ const files = new Map([
   ['/', 'index.html'], ['/widget', 'widget.html'],
   ...[
     'app.js', 'widget.js', 'i18n.js', 'messages.js', 'message.js', 'system-messages.js', 'access.js', 'api-client.js',
-    'html.js', 'icons.js', 'task-view.js', 'task-forms.js', 'view-lifecycle.js',
+    'html.js', 'icons.js', 'task-view.js', 'task-forms.js', 'view-lifecycle.js', 'settings-form.js',
     'task-mode.js', 'task-details.js', 'approval-details.js', 'storage-status.js',
     'quota-display.js', 'rhine-readout.js', 'style.css', 'widget.css',
     'favicon.svg', 'rhine-signal-loop.svg',

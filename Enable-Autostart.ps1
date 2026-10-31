@@ -5,14 +5,11 @@ $continuerName = 'CodexContinuer'
 $continuerNode = (Get-Command node -ErrorAction Stop).Source
 $continuerRoot = [IO.Path]::GetFullPath($PluginRoot)
 $continuerWatcher = Join-Path $continuerRoot 'desktop/watch-codex.ps1'
-$continuerRuntime = Join-Path $continuerRoot 'runtime.json'
-$continuerData = Join-Path $continuerRoot 'data'
-if (Test-Path -LiteralPath $continuerRuntime) {
-    $continuerConfig = Get-Content -LiteralPath $continuerRuntime -Raw | ConvertFrom-Json
-    if ($continuerConfig.dataDir) { $continuerData = $continuerConfig.dataDir }
-    elseif ($continuerConfig.profile -eq 'portable' -or -not (Test-Path -LiteralPath $continuerData)) { $continuerData = Join-Path $env:LOCALAPPDATA 'CodexContinuer' }
-}
-if ($env:CONTINUER_DATA_DIR) { $continuerData = $env:CONTINUER_DATA_DIR }
+# Resolve before creating directories, using the same rules as every runtime.
+# Base64 preserves Unicode paths across Windows PowerShell console encodings.
+$continuerEncodedData = & $continuerNode '-e' 'process.stdout.write(Buffer.from(require(process.argv[1]).dataDir, ''utf16le'').toString(''base64''))' (Join-Path $continuerRoot 'server/config.cjs')
+if ($LASTEXITCODE -ne 0 -or -not $continuerEncodedData) { throw 'Could not resolve the Continuer data directory.' }
+$continuerData = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($continuerEncodedData))
 New-Item -ItemType Directory -Path $continuerData -Force | Out-Null
 $continuerRegistryKey = Get-Item -LiteralPath $continuerRegistry -ErrorAction SilentlyContinue
 $continuerExisting = if ($continuerRegistryKey) { $continuerRegistryKey.GetValue($continuerName, $null) } else { $null }

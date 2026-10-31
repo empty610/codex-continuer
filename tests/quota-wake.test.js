@@ -4,6 +4,8 @@ import { EventEmitter } from 'node:events';
 import { Manager } from '../server/manager.js';
 import { QueueSender } from '../server/queue-sender.js';
 import { interruptedThread } from './fixtures/thread-history.js';
+import { taskStatusLabel, taskCardHtml } from '../public/task-view.js';
+import { t as tr } from '../public/i18n.js';
 
 const threadId = '11111111-1111-4111-8111-111111111111';
 const sample = (used, secondary = 10) => ({ rateLimits: { primary: { usedPercent: used }, secondary: { usedPercent: secondary } } });
@@ -89,6 +91,26 @@ test('preflight failure retries with backoff; repeating enable does not clear an
   await m.action(t.id, 'continuous', true); assert.equal(t.wake.episodeId, episode);
   m.setQuota(sample(0)); await m.tick(); await m.tick(); assert.equal(calls, 1);
   assert.equal(t.waitReason, 'desktop'); assert.equal(t.wake.delivery, 'pending');
+});
+
+test('an uncertain delivery clears retry state and both card layouts require attention', async () => {
+  let calls = 0;
+  const sender = new QueueSender({ binary: 'fixture', run: async (_binary, args) => {
+    calls++;
+    if (calls === 1) throw Error('Fixture capability probe failed');
+    if (args.includes('--help')) return 'help';
+    throw Error('Fixture exit after possible delivery');
+  } });
+  const { m, t } = await setup(null, (...args) => sender.send(...args));
+  m.setQuota(sample(100)); await m.tick(); m.setQuota(sample(0)); await m.tick();
+  assert.equal(t.waitReason, 'desktop'); assert.equal(taskStatusLabel(t), tr('ui.waiting_for_delivery'));
+  t.retryAt = 0; await m.tick();
+  assert.equal(t.status, 'blocked'); assert.equal(t.wake.delivery, 'uncertain');
+  assert.equal(t.waitReason, null); assert.equal(t.retryAt, 0);
+  assert.equal(taskStatusLabel(t), tr('ui.needs_attention'));
+  for (const layout of ['page', 'widget']) assert.ok(taskCardHtml(t, m.state.settings, layout).includes(tr('ui.needs_attention')));
+  const count = calls; await m.tick(); assert.equal(calls, count);
+  assert.equal(taskStatusLabel({ ...t, waitReason: 'desktop' }), tr('ui.needs_attention'), 'Old saved wait reasons cannot override a blocked status');
 });
 
 test('legacy writer wait migrates to monitoring without fabricating an exhaustion event', async () => {

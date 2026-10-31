@@ -69,7 +69,7 @@ export async function tickQuotaWake(manager, epoch = manager.scheduleEpoch) {
         } else if (error.cancelled) { if (wake.delivery === 'sending') wake.delivery = 'pending'; }
         else if (error.safeToRetry && task.continuous && task.status !== 'paused') {
           wake.delivery = 'pending'; task.waitReason = 'desktop'; task.retryAt = Date.now() + 60000;
-        } else { wake.delivery = 'uncertain'; if (task.status !== 'paused') task.status = 'blocked'; }
+        } else { wake.delivery = 'uncertain'; task.waitReason = null; task.retryAt = 0; if (task.status !== 'paused') task.status = 'blocked'; }
         setActivity(task, error);
         manager.log(taskActivityMessage(task), error.replyComplete ? 'info' : 'warning', task.id);
       }

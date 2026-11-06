@@ -30,8 +30,15 @@ function expandFromCard(card, workArea, size) {
   return { x: align(card.x, card.width, workArea.x, workArea.width, width), y: align(card.y, card.height, workArea.y, workArea.height, height), width, height };
 }
 function compactSize(value) { return Number.isFinite(value) ? Math.min(420,Math.max(160,Math.round(value))) : 256; }
+function expandedSize(value) {
+  return {
+    width: Number.isFinite(value?.width) ? Math.min(960,Math.max(360,Math.round(value.width))) : 432,
+    height: Number.isFinite(value?.height) ? Math.min(1200,Math.max(400,Math.round(value.height))) : 720,
+  };
+}
 function samePlacementContext(a,b) {
   return !!a && a.mode===b.mode && a.follow===b.follow && a.compactSize===b.compactSize &&
+    a.panelWidth===b.panelWidth && a.panelHeight===b.panelHeight &&
     (!a.follow || ['x','y','width','height'].every(key=>a.anchor?.[key]===b.anchor?.[key]));
 }
 function restoreModePosition(fallback,saved,workArea) {
@@ -43,4 +50,4 @@ function restoreModePosition(fallback,saved,workArea) {
     ? {...fallback,x,y} : fallback;
 }
 const sizes = { compact: { width: 256, height: 256 }, expanded: { width: 432, height: 720 } };
-module.exports = { place, placeIndependent, expandFromCard, offsetFrom, sizes, compactSize, samePlacementContext, restoreModePosition };
+module.exports = { place, placeIndependent, expandFromCard, offsetFrom, sizes, compactSize, expandedSize, samePlacementContext, restoreModePosition };

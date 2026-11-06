@@ -1,5 +1,25 @@
 // Stable IDs own both translations; literal source text is never a lookup key.
 export const messages = Object.freeze({
+  "ui.monitor_master": { "zh": "监测总开关", "en": "Master monitor" },
+  "ui.reply_monitor": { "zh": "回答监测", "en": "Reply monitor" },
+  "ui.completion_repeat": { "zh": "重复续作（每个新的完整回复触发一次）", "en": "Repeat for each new complete reply" },
+  "ui.completion_max_sends": { "zh": "本轮最多发送次数（含首次，重复时生效）", "en": "Maximum sends this run (includes first; used when repeating)" },
+  "ui.completion_run_count": { "zh": "本轮回答续作：{count}/{limit} 次", "en": "Completion follow-ups this run: {count}/{limit}" },
+  "ui.completion_controls_hint": { "zh": "回答监测和额度监测独立选择，监测总开关与后台调度需开启。不重复时只发送一次；重复时每个新完整回复触发一次，达到本轮次数后只关闭回答监测。暂停、重启和编辑不清零；明确重新开启回答监测开始新一轮，但不重发旧回复。所有发送仍受原聊天累计发送总上限约束。", "en": "Choose reply and quota monitoring independently; the master monitor and scheduler must be on. Without repeat, send once. With repeat, each new complete reply triggers once until this run reaches its limit, then only reply monitoring turns off. Pause, restart and edits retain the count. Explicitly re-enabling reply monitoring starts a new run without replaying old replies. All sends still share the chat's cumulative send cap." },
+  "ui.details_pending": { "zh": "完整详情尚未加载，请稍后重试。", "en": "Full details are not loaded yet. Please retry shortly." },
+  "ui.chat_page_hint": { "zh": "每批最多显示 300 个聊天，继续加载可查看更早的聊天。", "en": "Up to 300 chats are shown per batch. Load more to reach older chats." },
+  "ui.quota_period_unknown": { "zh": "当前窗口", "en": "Current window" },
+  "ui.period_hours": { "zh": "{p0}小时", "en": "{p0}h" },
+  "ui.period_days": { "zh": "{p0}天", "en": "{p0}d" },
+  "ui.panel_width": { "zh": "面板宽度", "en": "Panel width" },
+  "ui.panel_height": { "zh": "面板高度", "en": "Panel height" },
+  "ui.resize_widget": { "zh": "拖动调整大小；方向键微调", "en": "Drag to resize; use arrow keys to adjust" },
+  "ui.completion_monitoring": { "zh": "完整回答后继续", "en": "Continue after a complete reply" },
+  "ui.reply_and_quota_monitor": { "zh": "回答与额度监测", "en": "Reply and quota monitoring" },
+  "ui.completion_message": { "zh": "完整回答后的继续消息（独立保存）", "en": "Follow-up after a complete reply (saved separately)" },
+  "ui.edit_completion": { "zh": "监测与续作设置", "en": "Monitoring and follow-up settings" },
+  "ui.completion_hint": { "zh": "默认关闭。开启后，在监测运行且额度充足时，将最新轮次的完整最终回答视为本次指令结束，发送此独立消息；留空发送“继续”。同一回答只发送一次，与额度恢复消息共用发送次数上限。此判断不代表项目验收通过。", "en": "Off by default. While monitoring is running and quota is available, a complete final reply ends the latest instruction and triggers this separate message. Blank sends Continue. Each answer triggers once; both message types share the send limit. This does not verify project acceptance." },
+  "ui.disabled": { "zh": "已关闭", "en": "Disabled" },
   "ui.start_monitoring_after_adding": {
     "zh": "加入后开始监测",
     "en": "Start monitoring after adding"

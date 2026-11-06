@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { assertServiceIdentity, runtimeError, samePath, serviceUnavailable } from './local-client.js';
+import { assertServiceIdentity, runtimeError, serviceUnavailable } from './local-client.js';
 import { message, messageFields } from '../public/message.js';
 import widgetStateModule from '../server/widget-state.cjs';
 const { widgetState, matchesWidgetIdentity } = widgetStateModule;
@@ -71,17 +71,20 @@ export function createLifecycle({ root, dataDir, port, demo = false, platform = 
 
   function ensureWatcher() {
     if (demo || !diagnostic(join(dataDir, 'autostart-preferences.json'))?.enabled) return;
-    const watcher = diagnostic(join(dataDir, 'autostart-status.json'));
-    if (samePath(watcher?.pluginRoot, root, platform) && alive(watcher?.pid)) return;
+    // Saved PIDs can be recycled. Let the watcher's OS mutex arbitrate an
+    // explicit reopen instead of trusting a previous process's diagnostic file.
     const native = join(root, 'desktop/continuer-monitor.exe');
     if (exists(native)) launch(native, ['--watch', widgetNode, root, dataDir], 'watcher');
     else launch('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', join(root, 'desktop/watch-codex.ps1'), '-NodePath', widgetNode, '-PluginRoot', root, '-DataDir', dataDir], 'watcher');
   }
 
-  async function open(automatic, expected) {
+  async function open(job) {
+    const expected = job.generation;
     assertOpen(expected); await ensureService(); assertOpen(expected);
     const executable = join(root, 'node_modules/electron/dist', platform === 'win32' ? 'electron.exe' : 'electron');
     if (!exists(executable)) throw runtimeError('DESKTOP_MISSING', 'runtime.desktop_missing');
+    const automatic = !job.manual;
+    job.launchedAutomatic = automatic;
     const child = launch(executable, [join(root, 'desktop/main.cjs'), ...(automatic ? ['--auto'] : [])], 'widget', { ELECTRON_RUN_AS_NODE: undefined, CONTINUER_NODE: widgetNode, CONTINUER_PORT: String(port) });
     let spawnError;
     const failed = error => { spawnError = error; };
@@ -110,7 +113,12 @@ export function createLifecycle({ root, dataDir, port, demo = false, platform = 
     const job = opening || { manual: !automatic, generation };
     if (!opening) {
       opening = job;
-      job.promise = open(automatic, job.generation).then(result => {
+      job.promise = open(job).then(async result => {
+        assertOpen(job.generation);
+        // A manual request can arrive after the automatic process was spawned.
+        // Forward it through Electron's single-instance lock so the owner is
+        // revealed, without opening a second window or starting another service.
+        if (job.manual && job.launchedAutomatic) result = await open({ manual: true, generation: job.generation });
         assertOpen(job.generation);
         // Manual callers joining automatic startup restore one watcher.
         if (job.manual) ensureWatcher();

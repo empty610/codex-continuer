@@ -1,5 +1,5 @@
 import { t as tr } from './i18n.js';
-import { wakeExplanation } from './task-mode.js';
+import { wakeExplanation, completionFields } from './task-mode.js';
 import { escapeHtml as esc } from './html.js';
 import { icon } from './icons.js';
 
@@ -47,6 +47,7 @@ export function monitorImportForm(threadId, { layout = 'page', thread = null } =
         placeholder="${tr("ui.leave_blank_to_send_continue_example_run")}"></textarea>
       <small>${tr("ui.sent_to_the_original_chat_after_each")}</small>
     </label>
+    ${completionFields({}, esc, fieldClass, page ? 'check-label' : 'check')}
     <label class="${fieldClass}">${tr("ui.monitoring_note_optional_local_only")}<textarea name="note" maxlength="12000" ${thread ? tr("ui.placeholder_example_project_to_resume") : ''}></textarea>
     </label>
     <label class="${page ? 'check-label' : 'check'}"><input name="startMonitoring" type="checkbox">${tr("ui.start_monitoring_after_adding")}</label>

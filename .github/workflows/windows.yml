@@ -15,7 +15,7 @@ jobs:
       - run: node node_modules/electron/install.js
       - run: npm run check
       - run: npm run check:public
-      - run: npm test
+      - run: node --test --test-concurrency=2 tests/*.test.js
       - run: npm run build:release
       - run: node scripts/verify-artifact.js dist/portable-marketplace/plugins/codex-continuer
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

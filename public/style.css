@@ -22,3 +22,4 @@ nav>button.active,body.dark nav>button.active{background:var(--tint);color:var(-
 .detail-summary{white-space:pre-wrap}
 #language{padding:6px 8px;font-size:12px}
 .setting-row>div:last-child{flex-shrink:0;white-space:nowrap}
+.monitor-switches{display:flex;gap:8px;flex-wrap:wrap;font-size:11px;margin:10px 0}.monitor-switches button{padding:5px 8px;font-size:11px}

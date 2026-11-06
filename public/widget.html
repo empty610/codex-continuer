@@ -35,6 +35,8 @@
         <label data-i18n="ui.original_chat_message_limit_2">原聊天发送上限 <span data-i18n="ui.messages_2"><input type="number" name="maxWakeSends" min="1" max="100" required> 次</span></label>
         <label id="follow-label" data-i18n="ui.follow_codex_window">跟随 Codex 窗口 <input type="checkbox" id="follow"></label>
         <label class="size-setting" data-i18n="ui.widget_size">桌面卡片大小 <span><output id="compact-size-value">256 px</output><input id="compact-size" type="range" min="160" max="420" step="4" value="256" aria-label="桌面卡片大小" data-i18n-aria-label="ui.widget_size_2"></span></label>
+        <label class="size-setting" data-i18n="ui.panel_width">面板宽度 <span><output id="panel-width-value">432 px</output><input id="panel-width" type="range" min="360" max="960" step="4" value="432" aria-label="面板宽度" data-i18n-aria-label="ui.panel_width"></span></label>
+        <label class="size-setting" data-i18n="ui.panel_height">面板高度 <span><output id="panel-height-value">720 px</output><input id="panel-height" type="range" min="400" max="1200" step="4" value="720" aria-label="面板高度" data-i18n-aria-label="ui.panel_height"></span></label>
         <button id="reset-position" type="button" data-i18n="ui.reset_widget_position">重置挂件位置</button>
         <p class="hint" data-i18n="ui.sync_every_seconds_direct_work_has_a">同步周期为 10–90 秒。直接执行受轮次上限约束；原聊天按每条监测记录累计发送次数，到限停止。暂停、重新开启不会清零；提高上限后需手动开启。原聊天工作是否完成需自行确认。</p><button type="submit" data-i18n="ui.save_policy">保存策略</button>
       </form></details>
@@ -42,6 +44,7 @@
       <footer><span class="footer-mark">C / CONTINUER</span><span data-i18n="ui.saved_locally_runs_in_background">本机保存 · 后台持续工作</span></footer>
     </div>
   </section>
+  <button id="resize-widget" type="button" aria-label="拖动调整大小；方向键微调" title="拖动调整大小；方向键微调" data-i18n-aria-label="ui.resize_widget" data-i18n-title="ui.resize_widget">◢</button>
 </main>
 <dialog id="modal"><div class="modal-head"><strong id="modal-title"></strong><button id="close" aria-label="关闭对话框" data-i18n-aria-label="ui.close_dialog">×</button></div><div id="modal-body"></div><p id="error" role="alert"></p></dialog>
 <div id="toast" role="status"></div><script src="/widget.js" type="module"></script>

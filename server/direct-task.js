@@ -19,7 +19,7 @@ const inFlight = ['starting', ...ACTIVE_TURN_STATUSES];
 export const isDirectTask = task => task?.mode === 'direct' || (task != null && task.mode === undefined);
 export const isActiveDirectTask = task => isDirectTask(task) && inFlight.includes(task.status);
 export const isRunnableDirectTask = (task, now = Date.now()) => isDirectTask(task)
-  && (task.status === 'queued' || (task.status === 'waiting' && task.continuous)) && (!task.retryAt || now >= task.retryAt);
+  && (task.status === 'queued' || (task.status === 'waiting' && (task.continuous || task.waitReason === 'quota' && task.rounds === 0))) && (!task.retryAt || now >= task.retryAt);
 
 export function createDirectTask(input, { demo = false } = {}) {
   for (const key of ['name', 'cwd', 'prompt']) if (typeof input[key] !== 'string' || !input[key].trim()) throw new ClientError(textMessage("error.enter_a_name_project_directory_and_work_goal"));
@@ -58,7 +58,7 @@ function prepare(task) {
 function validate(task) {
   if (!DIRECT_TASK_STATUSES.includes(task.status)) throw new MessageError(textMessage("error.direct_state"));
   if (task.rounds !== undefined && (!Number.isSafeInteger(task.rounds) || task.rounds < 0)) throw new MessageError(textMessage("error.direct_rounds"));
-  if (task.wake !== undefined || task.sentCount !== undefined || task.continuationMessage !== undefined) throw new MessageError(textMessage("error.direct_monitor_fields"));
+  if (task.wake !== undefined || task.sentCount !== undefined || task.continuationMessage !== undefined || task.completionMonitoring !== undefined || task.completionMessage !== undefined || task.completion !== undefined || task.quotaMonitoring !== undefined || task.completionRepeat !== undefined || task.completionMaxSends !== undefined || task.completionSends !== undefined) throw new MessageError(textMessage("error.direct_monitor_fields"));
 }
 
 function action(task, action, value) {

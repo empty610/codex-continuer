@@ -32,6 +32,9 @@ const layout = createDesktopRuntime({
     name === '../server/logging.cjs' ? { installLogs() {} } :
     name === 'node:fs' ? { mkdirSync() {}, readFileSync: () => JSON.stringify(preferences), writeFileSync() {}, existsSync: () => false } : load(name),
 });
+// Manual startup now reveals the widget. Simulate hiding the already opened
+// owner before checking whether a mismatched second instance can reveal it.
+layout.preferences.hidden = true;
 electron.app.whenReady().then(() => { record.ready = true; persist(); });
 const stop = path.join(directory, mode + '.stop');
 setInterval(() => { if (fs.existsSync(stop)) electron.app.exit(0); }, 50);

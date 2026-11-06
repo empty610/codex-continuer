@@ -166,8 +166,21 @@ test('manual callers joining automatic opening share one widget and restore one 
   const manual = Array.from({ length: 10 }, () => f.lifecycle.openWidget()); pending.resolve(f.state);
   assert.equal((await automatic).ready, true); await Promise.all(manual);
   assert.deepEqual(f.launches.map(item => item.name), ['widget', 'watcher']);
-  assert.deepEqual(f.launches[0].args, [join(f.host.root, 'desktop/main.cjs'), '--auto']);
+  assert.deepEqual(f.launches[0].args, [join(f.host.root, 'desktop/main.cjs')]);
   assert.equal(f.launches[0].env.CONTINUER_NODE, 'fixture-widget-node'); assert.equal(f.launches[0].env.ELECTRON_RUN_AS_NODE, undefined);
+});
+
+test('manual opening after the automatic process has launched forwards a foreground request to the single-instance owner', async () => {
+  const pending = deferred(), f = fixture({ wait: () => pending.promise });
+  f.diagnostics.set('autostart-preferences.json', { enabled: true });
+  const automatic = f.lifecycle.openWidget({ automatic: true });
+  for (let attempt = 0; !f.launches.length && attempt < 10; attempt++) await Promise.resolve();
+  assert.ok(f.launches[0].args.includes('--auto'));
+  const manual = Array.from({ length: 10 }, () => f.lifecycle.openWidget());
+  readyWidget(f); pending.resolve();
+  assert.equal((await automatic).ready, true); await Promise.all(manual);
+  assert.deepEqual(f.launches.map(item => item.name), ['widget', 'widget', 'watcher']);
+  assert.deepEqual(f.launches[1].args, [join(f.host.root, 'desktop/main.cjs')]);
 });
 
 test('automatic and demo openings leave the watcher alone and automatic opening does not clear exit intent', async () => {
@@ -216,7 +229,7 @@ test('watcher startup respects ownership and retains the source-only fallback', 
     f.diagnostics.set('autostart-preferences.json', { enabled: true });
     f.diagnostics.set('autostart-status.json', { pid: 123, pluginRoot: watcher === 'owned' ? f.host.root : 'foreign' });
     await f.lifecycle.openWidget(); const launched = f.launches.filter(item => item.name === 'watcher');
-    assert.equal(launched.length, watcher === 'owned' ? 0 : 1);
+    assert.equal(launched.length, 1, 'saved PIDs never suppress recovery; the OS mutex prevents duplicate watchers');
     if (watcher === 'foreign') assert.deepEqual(launched[0].args, ['--watch', 'fixture-widget-node', f.host.root, f.host.dataDir]);
     if (watcher === 'fallback') { assert.equal(launched[0].command, 'powershell.exe'); assert.ok(launched[0].args.includes(join(f.host.root, 'desktop/watch-codex.ps1'))); }
   }

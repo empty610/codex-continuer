@@ -4,17 +4,20 @@ import { TaskDetails } from './task-details.js';
 import { createApiClient } from './api-client.js';
 import { escapeHtml as esc } from './html.js';
 import { taskCardHtml, taskDetailHtml } from './task-view.js';
-import { VisibleFeed, LazyResource, setHtml } from './view-lifecycle.js';
+import { VisibleFeed, LazyResource, setHtml, setDetailHtml } from './view-lifecycle.js';
+import { StateSnapshots, FormSessions, chatPage } from './interaction-state.js';
 import { ApprovalDetails } from './approval-details.js';
 import { storageNotice } from './storage-status.js';
-import { wakeExplanation, continuationEditor } from './task-mode.js';
+import { wakeExplanation, continuationEditor, completionEditor, completionFormSettings, monitorImportSettings } from './task-mode.js';
 import { quotaWindow, resetCountdown } from './quota-display.js';
 import { pixelText } from './rhine-readout.js';
 import { SettingsForm } from './settings-form.js';
+import { mountSizeControls } from './widget-size.js';
 
 export function mountWidget(environment = globalThis) {
   const { document, window, localStorage, Date, FormData, AbortSignal, DOMParser, getComputedStyle, setTimeout, clearTimeout, setInterval, clearInterval, fetch, Blob, URL } = environment;
-  const api = createApiClient({ request: (...args) => fetch(...args) });
+  const snapshots = new StateSnapshots(), forms = new FormSessions();
+  const api = createApiClient({ request: (...args) => fetch(...args), acceptSnapshot: data => snapshots.accept(data) });
   const applyStaticLanguage = staticInterface(document);
   const $ = s => document.querySelector(s);
   const settingsForm = new SettingsForm(() => $('#settings-form'));
@@ -26,7 +29,7 @@ export function mountWidget(environment = globalThis) {
   let modalRenderer = null, sessionModal = null;
   let state, connected = true, lastPixelCountdown, timer, detailId;
   let sessionItems = [], sessionCursor = null, sessionLoading = false, sessionError = null, lastSessionRead = 0, lastSessionAttempt = 0;
-  let windowSlot='primary', carouselTimer, swapTimer, refreshTimer, gaugeTimer, panelTimer, nativeVisible=!bridge, compactPixels=256;
+  let windowSlot='primary', carouselTimer, swapTimer, refreshTimer, gaugeTimer, panelTimer, nativeVisible=!bridge;
   const reducedMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
   const animation = new LazyResource(loadRhineAnimation);
   function viewVisible() { return !document.hidden && nativeVisible; }
@@ -106,8 +109,10 @@ export function mountWidget(environment = globalThis) {
     try {
       const result = await api('/api/threads' + (more && sessionCursor ? `?cursor=${encodeURIComponent(sessionCursor)}` : ''));
       const retained = sessionItems.find(t => t.id === ($('#session-select').value || chosen));
-      sessionItems = [...new Map([...(more ? sessionItems : []), ...(result.data || []), ...(!more && retained && !(result.data || []).some(t => t.id === retained.id) ? [retained] : [])].map(t => [t.id, t])).values()].slice(0, 300);
-      sessionCursor = sessionItems.length < 300 ? result.nextCursor : null;
+      const page = chatPage(sessionItems, result, more);
+      sessionItems = page.data;
+      if (retained && !sessionItems.some(t => t.id === retained.id)) sessionItems = [...sessionItems.slice(-299), retained];
+      sessionCursor = page.nextCursor;
       lastSessionRead = Date.now();
     } catch (error) { sessionError = error; }
     finally { sessionLoading = false; renderSessionOptions(); }
@@ -135,7 +140,8 @@ export function mountWidget(environment = globalThis) {
       $('#mini-reset-pixels').setAttribute('transform',`translate(${128-pixels.width*scale/2} 176) scale(${scale})`);
     } else if(!numeric && countdown!==lastPixelCountdown) $('#mini-reset-pixels').setAttribute('d','');
     lastPixelCountdown=countdown;
-    const windowLabel=windowSlot==='primary'?tr("ui.hour"):tr("ui.day");
+    const minutes = reading.windowMinutes;
+    const windowLabel = minutes === 300 ? tr('ui.hour') : minutes === 10080 ? tr('ui.day') : minutes > 0 ? tr(minutes >= 1440 ? 'ui.period_days' : 'ui.period_hours', {p0: minutes >= 1440 ? minutes/1440 : minutes/60}) : tr('ui.quota_period_unknown');
     setText('#mini-window',tr("ui.available_quota", { p0: windowLabel }));
     setText('#mini-reset-label',tr("ui.until_reset_2"));
     $('#mini').dataset.window=windowSlot;
@@ -150,6 +156,7 @@ export function mountWidget(environment = globalThis) {
     const languageChanged = setLanguage(state.settings.language || 'zh'); applyStaticLanguage();
     if ($('#error').dataset.sourceMessage) setFormError($('#error'), $('#error').errorSource || $('#error').dataset.sourceMessage);
     if (languageChanged && modalRenderer && $('#modal').open) refreshLocalizedContent($('#modal-body'), modalRenderer, true);
+    forms.sync($('#modal'), $('#settings-form'));
     if (bridge && !rendererAnnounced) {
       rendererAnnounced = true;
       bridge.control('renderer-ready').then(result => { rendererReady = true; applyDesktop(result); stream.sync(); }).catch(error => { rendererAnnounced = false; toast(systemText(error)); });
@@ -185,7 +192,7 @@ ${esc(a.cwd)}</pre>${a.requiresDetails ? `<p>${tr("ui.full_approval_details_are_
       else { $('#modal').close(); detailId = null; }
     }
   }
-  function open(title, html) { modalRenderer = null; sessionModal = null; detailId = null; $('#modal-title').textContent = title; $('#modal-body').innerHTML = html; setFormError($('#error'), ''); if (!$('#modal').open) $('#modal').showModal(); }
+  function open(title, html) { forms.open(); modalRenderer = null; sessionModal = null; detailId = null; $('#modal-title').textContent = title; $('#modal-body').innerHTML = html; setFormError($('#error'), ''); if (!$('#modal').open) $('#modal').showModal(); }
   function openLocalized(render) {
     open('', '');
     modalRenderer = () => { const view = render(); $('#modal-title').textContent = view.title; return view.html; };
@@ -197,9 +204,9 @@ ${esc(a.cwd)}</pre>${a.requiresDetails ? `<p>${tr("ui.full_approval_details_are_
     if (!summary) return;
     const task = taskDetails.read(summary);
     $('#modal-title').textContent = task.name;
-    $('#modal-body').innerHTML = taskDetailHtml(task, state.settings, {
+    setDetailHtml($('#modal-body'), taskDetailHtml(task, state.settings, {
       layout: 'widget', canEdit: taskDetails.ready(summary),
-    });
+    }));
   }
   async function sessions(cursor, append = false) {
     if (!append) {
@@ -209,7 +216,7 @@ ${esc(a.cwd)}</pre>${a.requiresDetails ? `<p>${tr("ui.full_approval_details_are_
         const empty = list.loading ? `<p class="hint">${tr("ui.loading_local_chats")}</p>` : list.error ? `<p class="hint">${tr("ui.chats_unavailable")}</p>` : `<p class="hint">${tr("ui.no_chats_available_to_import")}</p>`;
         const more = list.nextCursor ? `<button id="more" data-action="more" data-cursor="${esc(list.nextCursor)}" ${list.loading ? 'disabled' : ''}>${tr("ui.load_more")}</button>` : '';
         const retry = list.error ? `<button data-action="import">${tr("ui.retry")}</button>` : '';
-        return { title: tr("ui.import_an_existing_chat"), html: (options || empty) + more + retry };
+        return { title: tr("ui.import_an_existing_chat"), html: `<p class="hint">${tr("ui.chat_page_hint")}</p>` + (options || empty) + more + retry };
       });
       sessionModal = { list, render: modalRenderer };
     }
@@ -220,9 +227,7 @@ ${esc(a.cwd)}</pre>${a.requiresDetails ? `<p>${tr("ui.full_approval_details_are_
     try {
       const result = await api('/api/threads' + (cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''));
       if (modalRenderer !== current.render || !$('#modal').open) return;
-      const remaining = 300 - (append ? current.list.data.length : 0);
-      current.list.data = [...(append ? current.list.data : []), ...(result.data || []).slice(0, remaining)];
-      current.list.nextCursor = remaining > (result.data || []).length ? result.nextCursor : null;
+      Object.assign(current.list, chatPage(current.list.data, result, append));
     } catch (error) {
       current.list.error = error;
       if (modalRenderer === current.render && $('#modal').open) setFormError($('#error'), error);
@@ -249,11 +254,11 @@ ${esc(a.cwd)}</pre>${a.requiresDetails ? `<p>${tr("ui.full_approval_details_are_
       return;
     }
     if (action === 'detail') { open(tr("ui.work_details"), ''); detailId = id; detail(id); return; }
-    if (action === 'edit-message') {
+    if (action === 'edit-message' || action === 'edit-completion') {
       const summary = state.tasks.find(task => task.id === id), task = summary && taskDetails.read(summary);
       if (!task || task.mode !== 'quota-wake') throw Error(tr("ui.only_monitored_chats_support_editing_continuation_messages"));
       if (!taskDetails.ready(summary)) throw Error(tr("ui.wait_for_the_full_work_details_to"));
-      openLocalized(() => ({ title: tr("ui.edit_continuation_message"), html: continuationEditor(task, esc) })); return;
+      openLocalized(() => ({ title: tr(action === 'edit-completion' ? 'ui.edit_completion' : 'ui.edit_continuation_message'), html: action === 'edit-completion' ? completionEditor(task, esc) : continuationEditor(task, esc) })); return;
     }
     if (action === 'pick') { const path = await bridge.pickDirectory(); if (path) $('#new-form [name=cwd]').value = path; return; }
     if (action === 'import' || action === 'more') { await sessions(b.dataset.cursor, action === 'more'); return; }
@@ -268,13 +273,26 @@ ${esc(a.cwd)}</pre>${a.requiresDetails ? `<p>${tr("ui.full_approval_details_are_
     else if (action === 'approve' || action === 'decline') { if (action === 'approve' && !approvalDetails.ready(state.approvals.find(item => String(item.id) === id && item.detailToken === token))) throw Error(tr("ui.wait_for_the_full_approval_details_to")); state = await api('/api/approval', { id, token, decision: action === 'approve' ? 'accept' : 'decline' }); }
     render();
   } catch (error) { if ($('#modal').open) setFormError($('#error'), error); else toast(systemText(error)); } finally { b.disabled = false; } });
-  document.addEventListener('change', async e => { const input = e.target; try { if (input.id === 'language') { input.disabled = true; try { state = await api('/api/settings', { language: input.value }); } finally { input.disabled = false; } } else if (input.id === 'scheduler') state = await api('/api/settings', { enabled: input.checked }); else if (input.dataset.continuous) state = await api(`/api/tasks/${encodeURIComponent(input.dataset.continuous)}`, { action: 'continuous', value: input.checked }); else if (input.id === 'follow') { applyDesktop(await bridge.control('follow', input.checked)); return; } else return; render(); } catch (error) { toast(systemText(error)); render(); } });
-  document.addEventListener('submit', async e => { e.preventDefault(); const form = e.target, values = Object.fromEntries(new FormData(form)), button = form.querySelector('[type=submit]'); button.disabled = true; setFormError($('#error'), ''); try { if (form.id === 'new-form') state = await api('/api/tasks', { ...values, continuous: values.continuous === 'on' }); else if (form.id === 'import-form') state = await api('/api/import', { threadId: form.dataset.id, note: values.note, continuationMessage: values.continuationMessage, startMonitoring: values.startMonitoring === 'on' }); else if (form.id === 'message-form') { state = await api(`/api/tasks/${encodeURIComponent(form.dataset.id)}`, { action: 'message', value: values.continuationMessage }); taskDetails.clear(); } else if (form.id === 'settings-form') state = await api('/api/settings', settingsForm.changes(values)); if (form.id !== 'settings-form') $('#modal').close(); render(); toast(form.id === 'message-form' ? tr("ui.continuation_message_saved") : tr("ui.saved")); } catch (error) { if ($('#modal').open) setFormError($('#error'), error); else toast(systemText(error)); } finally { button.disabled = false; } });
-  function setSize(value) {
-    compactPixels=Math.max(160,Math.min(420,Math.round(Number(value)||256)));
-    document.documentElement.style.setProperty('--compact-size',`${compactPixels}px`);
-    $('#compact-size').value=compactPixels; $('#compact-size-value').textContent=`${compactPixels} px`;
-  }
+  document.addEventListener('change', async e => { const input = e.target; try { if (input.id === 'language') { input.disabled = true; try { state = await api('/api/settings', { language: input.value }); } finally { input.disabled = false; } } else if (input.id === 'scheduler') state = await api('/api/settings', { enabled: input.checked }); else if (input.dataset.monitor) { state=await api(`/api/tasks/${encodeURIComponent(input.dataset.id)}`,{action:input.dataset.monitor,value:input.checked});taskDetails.clear(); } else if (input.dataset.continuous) state = await api(`/api/tasks/${encodeURIComponent(input.dataset.continuous)}`, { action: 'continuous', value: input.checked }); else if (input.id === 'follow') { applyDesktop(await bridge.control('follow', input.checked)); return; } else return; render(); } catch (error) { toast(systemText(error)); render(); } });
+  document.addEventListener('submit', async e => {
+    e.preventDefault();
+    const form = e.target, job = forms.begin(form); if (!job) return;
+    const values = Object.fromEntries(new FormData(form)), button = form.querySelector('[type=submit]');
+    const current = () => forms.current(job) && (!job.modal || $('#modal').open);
+    button.disabled = true; setFormError($('#error'), '');
+    try {
+      if (form.id === 'new-form') state = await api('/api/tasks', { ...values, continuous: values.continuous === 'on' });
+      else if (form.id === 'import-form') state = await api('/api/import', { threadId: form.dataset.id, note: values.note, continuationMessage: values.continuationMessage, startMonitoring: values.startMonitoring === 'on', completionMonitoring: values.completionMonitoring === 'on', completionMessage: values.completionMessage, ...monitorImportSettings(values) });
+      else if (form.id === 'message-form' || form.id === 'completion-form') {
+        const completion = form.id === 'completion-form';
+        state = await api(`/api/tasks/${encodeURIComponent(form.dataset.id)}`, { action: completion ? 'completion' : 'message', value: completion ? completionFormSettings(values) : values.continuationMessage });
+        taskDetails.clear();
+      } else if (form.id === 'settings-form') state = await api('/api/settings', settingsForm.changes(values));
+      if (job.modal && current()) $('#modal').close();
+      render(); toast(['message-form', 'completion-form'].includes(form.id) ? tr('ui.continuation_message_saved') : tr('ui.saved'));
+    } catch (error) { if (job.modal && current()) setFormError($('#error'), error); else toast(systemText(error)); }
+    finally { forms.end(job); button.disabled = false; forms.sync($('#modal'), $('#settings-form')); }
+  });
   let nativeTransition,transitionAcknowledged;
   function acknowledgeTransition() {
     if(!bridge || !nativeTransition || transitionAcknowledged===nativeTransition.id) return;
@@ -294,7 +312,7 @@ ${esc(a.cwd)}</pre>${a.requiresDetails ? `<p>${tr("ui.full_approval_details_are_
     document.body.classList.toggle('collapsed',!expanded);
     $('#mini').setAttribute('aria-expanded',String(expanded));
     document.body.classList.toggle('is-switching',!!s.transitioning);
-    $('#follow').checked=s.follow; nativeVisible=!!s.visible; setSize(s.compactSize);
+    $('#follow').checked=s.follow; nativeVisible=!!s.visible; sizeControls.apply(s);
     syncView();
     if(nativeTransition && (reducedMotion.matches || Number(getComputedStyle($('.shell')).opacity)<=.001)) acknowledgeTransition();
   }
@@ -334,25 +352,19 @@ ${esc(a.cwd)}</pre>${a.requiresDetails ? `<p>${tr("ui.full_approval_details_are_
   window.addEventListener('blur',() => endPointer(null,true));
   $('#mini').onclick=async e => { e.preventDefault(); const result=await pointerResult; pointerResult=Promise.resolve({moved:false}); if(!result.moved) void setExpanded(true); };
   $('#mini').addEventListener('keydown',e => { if(e.key==='Enter'||e.key===' ') { e.preventDefault(); void setExpanded(true); } });
-  $('#mini').addEventListener('wheel',e => { if(!e.ctrlKey) return; e.preventDefault(); if(!pointerDrag) void changeSize(compactPixels+(e.deltaY<0?16:-16)); },{passive:false});
-  async function changeSize(value) {
-    setSize(value);
-    if(bridge) { try { applyDesktop(await bridge.control('compact-size',compactPixels)); } catch(error) { toast(systemText(error)); } }
-    else localStorage.setItem('continuer-compact-size',String(compactPixels));
-  }
-  $('#compact-size').addEventListener('input',e => { void changeSize(e.target.value); });
+  const sizeControls=mountSizeControls({document,window,localStorage,bridge,onState:applyDesktop,onError:error=>toast(systemText(error)),isDragging:()=>!!pointerDrag});
   $('#collapse').onclick=() => { void setExpanded(false); };
   if(bridge) {
     bridge.onState(applyDesktop); bridge.control('state').then(applyDesktop).catch(e=>toast(e.message));
     $('#quit').onclick=()=>bridge.control('quit');
     $('#reset-position').onclick=()=>bridge.control('reset-position').then(()=>toast(tr("ui.widget_position_reset")));
-  } else { document.body.classList.add('browser'); setSize(Number(localStorage.getItem('continuer-compact-size'))||256); }
+  } else { document.body.classList.add('browser'); }
   document.addEventListener('visibilitychange',syncView);
   $('#session-select').onchange = () => { localStorage.setItem('continuer-selected-session', $('#session-select').value); updateSessionSelection(); };
-  $('#close').onclick = () => $('#modal').close(); $('#modal').addEventListener('close', () => { if ($('#modal').open) return; modalRenderer = null; sessionModal = null; detailId = null; taskDetails.clear(); });
+  $('#close').onclick = () => $('#modal').close(); $('#modal').addEventListener('close', () => { if ($('#modal').open) return; forms.open(); modalRenderer = null; sessionModal = null; detailId = null; taskDetails.clear(); });
   if (localStorage.getItem('continuer-rhine-theme') === 'light') document.body.classList.add('light');
   $('#theme').onclick = () => { document.body.classList.toggle('light'); localStorage.setItem('continuer-rhine-theme', document.body.classList.contains('light') ? 'light' : 'dark'); };
-  const stream = new VisibleFeed({ ...(environment.createSource ? { create: environment.createSource } : {}), visible: viewVisible, bootstrap: () => !!bridge && !rendererReady, receive: data => { connected = true; state = data; render(); }, error: () => { connected = false; if (state) render(); else $('#health').textContent = tr("ui.could_not_connect_to_the_local_service_2"); } });
+  const stream = new VisibleFeed({ ...(environment.createSource ? { create: environment.createSource } : {}), visible: viewVisible, bootstrap: () => !!bridge && !rendererReady, receive: data => { connected = true; state = snapshots.accept(data); render(); }, error: () => { connected = false; if (state) render(); else $('#health').textContent = tr("ui.could_not_connect_to_the_local_service_2"); } });
   window.addEventListener('pagehide', () => { stream.close(); nativeVisible = false; syncActivity(); });
   window.addEventListener('pageshow', () => { if (!bridge) nativeVisible = true; syncView(); });
   stream.sync();

@@ -5,15 +5,17 @@ import { createApiClient } from './api-client.js';
 import { escapeHtml as esc } from './html.js';
 import { icon } from './icons.js';
 import { taskCardHtml, taskDetailHtml, isTaskActive, toggle } from './task-view.js';
-import { VisibleFeed, setHtml } from './view-lifecycle.js';
+import { VisibleFeed, setHtml, setDetailHtml } from './view-lifecycle.js';
+import { StateSnapshots, FormSessions, chatPage } from './interaction-state.js';
 import { ApprovalDetails } from './approval-details.js';
 import { storageNotice } from './storage-status.js';
-import { wakeExplanation, continuationEditor } from './task-mode.js';
+import { wakeExplanation, continuationEditor, completionEditor, completionFormSettings, monitorImportSettings } from './task-mode.js';
 import { SettingsForm } from './settings-form.js';
 
 export function mountPage(environment = globalThis) {
   const { document, window, localStorage, Date, FormData, AbortSignal, DOMParser, getComputedStyle, setTimeout, clearTimeout, setInterval, clearInterval, fetch, Blob, URL } = environment;
-  const api = createApiClient({ request: (...args) => fetch(...args) });
+  const snapshots = new StateSnapshots(), forms = new FormSessions();
+  const api = createApiClient({ request: (...args) => fetch(...args), acceptSnapshot: data => snapshots.accept(data) });
   const applyStaticLanguage = staticInterface(document);
   const $ = selector => document.querySelector(selector);
   const settingsForm = new SettingsForm(() => $('#settings-form'));
@@ -75,7 +77,7 @@ ${esc(a.cwd)}</pre>${a.requiresDetails ? `<p>${tr("ui.full_approval_details_are_
     const s = state.settings;
     const intervals = [...new Set([10, 15, 30, 60, 90, s.pollSeconds])].sort((a, b) => a - b);
     const intervalOptions = intervals.map(n => `<option value="${n}" ${s.pollSeconds === n ? 'selected' : ''}>${n}${tr("ui.sec")}</option>`).join('');
-    const connected = state.connection.status === 'connected';
+    const connected = streamAlive && state.connection.status === 'connected';
     const autostart = state.diagnostics?.autostart;
     const watcher = autostart?.watcherRunning ? tr("ui.watcher_running") : autostart?.enabled === false ? tr("ui.off") : tr("ui.watcher_stopped_or_status_unknown");
     return `${heading(tr("ui.settings"), tr("ui.set_when_and_how_your_work_resumes"))}
@@ -103,17 +105,18 @@ ${esc(a.cwd)}</pre>${a.requiresDetails ? `<p>${tr("ui.full_approval_details_are_
           </div>
           <div class="setting-row">
             <div><h3>${tr("ui.local_connection")}</h3><p>${tr("ui.uses_local_codex_sign_in_and_the")}<br>${tr("ui.work_runs_in_the_project_directory_sandbox")}</p></div>
-            <span class="badge ${connected ? 'completed' : 'waiting'}">${connected ? tr("ui.connected") : tr("ui.disconnected")}</span>
+            <span id="settings-connection" class="badge ${connected ? 'completed' : 'waiting'}">${connected ? tr("ui.connected") : tr("ui.disconnected")}</span>
           </div>
         </div>
         <div class="settings-actions"><button class="primary" type="submit">${tr("ui.save_settings")}</button><span class="form-error" id="settings-error"></span></div>
       </form>
-      <p class="subtitle">${tr("ui.the_local_service_must_stay_running_work")}${watcher}。<br>${tr("ui.build")}${esc(state.buildId || '')}${tr("ui.protocol")}${state.protocolVersion} · <button type="button" class="text-button" data-action="health">${tr("ui.diagnostics")}</button></p>`;
+      <p class="subtitle">${tr("ui.the_local_service_must_stay_running_work")}<span id="settings-watcher">${watcher}</span>。<br>${tr("ui.build")}${esc(state.buildId || '')}${tr("ui.protocol")}${state.protocolVersion} · <button type="button" class="text-button" data-action="health">${tr("ui.diagnostics")}</button></p>`;
   }
   function render() {
     if (!state || document.hidden) return;
     const languageChanged = setLanguage(state.settings.language || 'zh'); applyStaticLanguage();
     if (languageChanged && modalRenderer && modal.open) refreshLocalizedContent($('#modal-body'), modalRenderer, true);
+    forms.sync(modal, $('#settings-form'));
     const draft = languageChanged && page === 'settings' && $('#settings-form') ? new FormData($('#settings-form')) : null;
     $('#app-version').textContent = `v${state.version} · ${state.buildId.slice(0, 8)}`;
     $('#nav-count').textContent = state.tasks.filter(t => t.status !== 'completed').length;
@@ -130,6 +133,12 @@ ${esc(a.cwd)}</pre>${a.requiresDetails ? `<p>${tr("ui.full_approval_details_are_
       const control = $('#settings-form .switch');
       control.classList.toggle('on', state.settings.enabled);
       control.setAttribute('aria-checked', String(state.settings.enabled));
+      const badge = $('#settings-connection');
+      badge.textContent = tr(connected ? 'ui.connected' : 'ui.disconnected');
+      badge.classList.toggle('completed', connected); badge.classList.toggle('waiting', !connected);
+      const autostart = state.diagnostics?.autostart;
+      $('#settings-watcher').textContent = tr(autostart?.watcherRunning ? 'ui.watcher_running' : autostart?.enabled === false ? 'ui.off' : 'ui.watcher_stopped_or_status_unknown');
+      if (modal.open && selectedTask) renderDetail(selectedTask);
       return;
     }
     let html;
@@ -141,9 +150,10 @@ ${esc(a.cwd)}</pre>${a.requiresDetails ? `<p>${tr("ui.full_approval_details_are_
     setHtml(main, html);
     if (draft) settingsForm.restore(draft);
     if (page === 'settings') settingsForm.sync(state.settings);
+    forms.sync(modal, $('#settings-form'));
     if (modal.open && selectedTask) renderDetail(selectedTask);
   }
-  function openModal(html) { modalRenderer = null; importList = null; selectedTask = null; $('#modal-body').innerHTML = html; if (!modal.open) modal.showModal(); }
+  function openModal(html) { forms.open(); modalRenderer = null; importList = null; selectedTask = null; $('#modal-body').innerHTML = html; if (!modal.open) modal.showModal(); }
   function openLocalized(render) { openModal(''); modalRenderer = render; refreshLocalizedContent($('#modal-body'), render); }
   function modalHead(title) { return `<div class="modal-head"><h2>${title}</h2><button class="icon-button" data-action="close" aria-label="${tr("ui.close")}">${icon('close')}</button></div>`; }
   function newTask() {
@@ -153,14 +163,14 @@ ${esc(a.cwd)}</pre>${a.requiresDetails ? `<p>${tr("ui.full_approval_details_are_
     const summary = state.tasks.find(task => task.id === id);
     if (!summary) { modal.close(); selectedTask = null; return; }
     const task = taskDetails.read(summary);
-    $('#modal-body').innerHTML = modalHead(esc(task.name)) + taskDetailHtml(task, state.settings, {
+    setDetailHtml($('#modal-body'), modalHead(esc(task.name)) + taskDetailHtml(task, state.settings, {
       canEdit: taskDetails.ready(summary),
-    });
+    }));
   }
   async function importModal(cursor = null, append = false) {
     if (!append) {
       const list = { data: [], nextCursor: null, loading: true, error: null };
-      const render = () => `${modalHead(tr("ui.import_codex_chat"))}<p class="subtitle">${tr("ui.choose_a_local_chat_to_manage_monitoring")}</p><div id="thread-list">${list.loading && !list.data.length ? `<div class="loading">${tr("ui.loading_chats")}</div>` : list.data.map(t => `<div class="thread-option"><div><strong>${esc(t.name || t.preview || tr("ui.untitled_chat"))}</strong><small>${esc(t.cwd || t.id)}</small></div><button class="small" data-action="choose-thread" data-id="${esc(t.id)}">${tr("ui.select")}</button></div>`).join('') || `<p class="subtitle">${tr("ui.no_chats_available_to_import")}</p>`}</div><div id="thread-more">${list.nextCursor ? `<button class="text-button" data-action="more-threads" data-cursor="${esc(list.nextCursor)}" ${list.loading ? 'disabled' : ''}>${tr("ui.load_more")}</button>` : ''}</div><div class="form-error" id="modal-error">${esc(systemText(list.error))}</div>`;
+      const render = () => `${modalHead(tr("ui.import_codex_chat"))}<p class="subtitle">${tr("ui.choose_a_local_chat_to_manage_monitoring")} ${tr("ui.chat_page_hint")}</p><div id="thread-list">${list.loading && !list.data.length ? `<div class="loading">${tr("ui.loading_chats")}</div>` : list.data.map(t => `<div class="thread-option"><div><strong>${esc(t.name || t.preview || tr("ui.untitled_chat"))}</strong><small>${esc(t.cwd || t.id)}</small></div><button class="small" data-action="choose-thread" data-id="${esc(t.id)}">${tr("ui.select")}</button></div>`).join('') || `<p class="subtitle">${tr("ui.no_chats_available_to_import")}</p>`}</div><div id="thread-more">${list.nextCursor ? `<button class="text-button" data-action="more-threads" data-cursor="${esc(list.nextCursor)}" ${list.loading ? 'disabled' : ''}>${tr("ui.load_more")}</button>` : ''}</div><div class="form-error" id="modal-error">${esc(systemText(list.error))}</div>`;
       openLocalized(render); importList = { list, render };
     }
     const current = importList;
@@ -170,9 +180,7 @@ ${esc(a.cwd)}</pre>${a.requiresDetails ? `<p>${tr("ui.full_approval_details_are_
     try {
       const result = await api(`/api/threads${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`);
       if (modalRenderer !== current.render || !modal.open) return;
-      const remaining = 300 - (append ? current.list.data.length : 0);
-      current.list.data = [...(append ? current.list.data : []), ...result.data.slice(0, remaining)];
-      current.list.nextCursor = result.nextCursor && remaining > result.data.length ? result.nextCursor : null;
+      Object.assign(current.list, chatPage(current.list.data, result, append));
     } catch (error) { current.list.error = error; }
     finally {
       current.list.loading = false;
@@ -189,11 +197,11 @@ ${esc(a.cwd)}</pre>${a.requiresDetails ? `<p>${tr("ui.full_approval_details_are_
       if (action === 'new') { newTask(); return; }
       if (action === 'health') { const health = await api('/api/health'); openLocalized(() => `${modalHead(tr("ui.diagnostics"))}<pre class="detail-output">${esc(JSON.stringify(health, null, 2))}</pre>`); return; }
       if (action === 'detail') { openModal(''); selectedTask = id; renderDetail(id); return; }
-      if (action === 'edit-message') {
+      if (action === 'edit-message' || action === 'edit-completion') {
         const summary = state.tasks.find(task => task.id === id), task = summary && taskDetails.read(summary);
         if (!task || task.mode !== 'quota-wake') throw Error(tr("ui.only_monitored_chats_support_editing_continuation_messages"));
         if (!taskDetails.ready(summary)) throw Error(tr("ui.wait_for_the_full_work_details_to"));
-        openLocalized(() => `${modalHead(tr("ui.edit_continuation_message"))}${continuationEditor(task, esc)}`); return;
+        openLocalized(() => `${modalHead(tr(action === 'edit-completion' ? 'ui.edit_completion' : 'ui.edit_continuation_message'))}${action === 'edit-completion' ? completionEditor(task, esc) : continuationEditor(task, esc)}`); return;
       }
       if (action === 'import') { await importModal(); return; }
       if (action === 'more-threads') { await importModal(button.dataset.cursor, true); return; }
@@ -207,6 +215,7 @@ ${esc(a.cwd)}</pre>${a.requiresDetails ? `<p>${tr("ui.full_approval_details_are_
       else if (action === 'refresh') { state = await api('/api/refresh', {}); toast(state.connection.status === 'connected' ? tr("ui.quota_synced") : tr("ui.connection_failed_check_the_notice")); }
       else if (action === 'scheduler') { state = await api('/api/settings', { enabled: !state.settings.enabled }); toast(state.settings.enabled ? tr("ui.scheduling_enabled") : tr("ui.scheduling_paused")); }
       else if (action === 'continuous') { state = await api(`/api/tasks/${id}`, { action, value: !state.tasks.find(t => t.id === id).continuous }); }
+      else if (action === 'quota-monitoring' || action === 'completion-monitoring') { const task=state.tasks.find(t=>t.id===id); const enabled=action==='quota-monitoring' ? task.quotaMonitoring!==false : !!task.completionMonitoring; state=await api(`/api/tasks/${encodeURIComponent(id)}`,{action,value:!enabled});taskDetails.clear(); }
       else if (['pause', 'resume', 'complete'].includes(action)) { const wake = state.tasks.find(t => t.id === id)?.mode === 'quota-wake'; state = await api(`/api/tasks/${id}`, { action }); toast(wake ? (action === 'resume' ? tr("ui.monitoring_enabled") : action === 'complete' ? tr("ui.monitoring_ended_and_removed") : tr("ui.monitoring_paused")) : (action === 'resume' ? tr("ui.work_queued") : action === 'complete' ? tr("ui.marked_complete") : tr("ui.pause_requested"))); }
       else if (action === 'approve' || action === 'decline') { if (action === 'approve' && !approvalDetails.ready(state.approvals.find(item => String(item.id) === id && item.detailToken === token))) throw Error(tr("ui.wait_for_the_full_approval_details_to")); state = await api('/api/approval', { id, token, decision: action === 'approve' ? 'accept' : 'decline' }); }
       else if (action === 'exhaust' || action === 'recover') { state = await api('/api/demo/quota', { exhausted: action === 'exhaust' }); toast(action === 'exhaust' ? tr("ui.simulated_quota_exhausted") : tr("ui.simulated_quota_recovered")); }
@@ -215,22 +224,28 @@ ${esc(a.cwd)}</pre>${a.requiresDetails ? `<p>${tr("ui.full_approval_details_are_
   });
   document.addEventListener('submit', async event => {
     const form = event.target; event.preventDefault();
+    const job = forms.begin(form); if (!job) return;
     const values = Object.fromEntries(new FormData(form));
     const submit = form.querySelector('[type="submit"],button.primary'); submit.disabled = true;
+    const current = () => forms.current(job) && (!job.modal || modal.open);
+    const close = () => { if (current()) modal.close(); };
+    const errorElement = () => job.modal ? $('#modal-body').querySelector('.form-error') : $('#settings-error');
+    if (errorElement()) setFormError(errorElement(), '');
     try {
-      if (form.id === 'task-form') { state = await api('/api/tasks', { ...values, continuous: values.continuous === 'on' }); modal.close(); toast(tr("ui.work_created")); }
-      else if (form.id === 'import-form') { const startMonitoring = values.startMonitoring === 'on'; state = await api('/api/import', { ...values, startMonitoring, threadId: form.dataset.id }); modal.close(); toast(tr(startMonitoring ? "ui.chat_added_monitoring_enabled" : "ui.chat_imported_monitoring_stays_paused")); }
-      else if (form.id === 'message-form') { state = await api(`/api/tasks/${encodeURIComponent(form.dataset.id)}`, { action: 'message', value: values.continuationMessage }); taskDetails.clear(); modal.close(); toast(tr("ui.continuation_message_saved")); }
+      if (form.id === 'task-form') { state = await api('/api/tasks', { ...values, continuous: values.continuous === 'on' }); close(); toast(tr("ui.work_created")); }
+      else if (form.id === 'import-form') { const startMonitoring = values.startMonitoring === 'on'; state = await api('/api/import', { ...values, ...monitorImportSettings(values), completionMonitoring: values.completionMonitoring === 'on', startMonitoring, threadId: form.dataset.id }); close(); toast(tr(startMonitoring ? "ui.chat_added_monitoring_enabled" : "ui.chat_imported_monitoring_stays_paused")); }
+      else if (form.id === 'message-form') { state = await api(`/api/tasks/${encodeURIComponent(form.dataset.id)}`, { action: 'message', value: values.continuationMessage }); taskDetails.clear(); close(); toast(tr("ui.continuation_message_saved")); }
+      else if (form.id === 'completion-form') { state = await api(`/api/tasks/${encodeURIComponent(form.dataset.id)}`, { action: 'completion', value: completionFormSettings(values) }); taskDetails.clear(); close(); toast(tr('ui.continuation_message_saved')); }
       else if (form.id === 'settings-form') { state = await api('/api/settings', settingsForm.changes(values)); document.activeElement?.blur(); toast(tr("ui.settings_saved")); }
       render();
-    } catch (error) { const errorEl = form.querySelector('.form-error'); if (errorEl) setFormError(errorEl, error); else toast(systemText(error)); }
-    finally { submit.disabled = false; }
+    } catch (error) { const errorEl = current() && errorElement(); if (errorEl) setFormError(errorEl, error); else toast(systemText(error)); }
+    finally { forms.end(job); submit.disabled = false; forms.sync(modal, $('#settings-form')); }
   });
   $('#language').addEventListener('change', async event => { const input = event.target; input.disabled = true; try { state = await api('/api/settings', { language: input.value }); render(); } catch (error) { toast(systemText(error)); applyStaticLanguage(); } finally { input.disabled = false; } });
   $('#theme').addEventListener('click', () => { document.body.classList.toggle('dark'); localStorage.setItem('continuer-theme', document.body.classList.contains('dark') ? 'dark' : 'light'); });
   if (localStorage.getItem('continuer-theme') === 'dark') document.body.classList.add('dark');
-  modal.addEventListener('close', () => { if (modal.open) return; modalRenderer = null; importList = null; selectedTask = null; taskDetails.clear(); });
-  const stream = new VisibleFeed({ ...(environment.createSource ? { create: environment.createSource } : {}), visible: () => !document.hidden, receive: data => { streamAlive = true; state = data; render(); }, error: () => { streamAlive = false; if (state) render(); else setHtml(main, `<div class="notice">${tr("ui.could_not_connect_to_the_local_service")}</div>`); } });
+  modal.addEventListener('close', () => { if (modal.open) return; forms.open(); modalRenderer = null; importList = null; selectedTask = null; taskDetails.clear(); });
+  const stream = new VisibleFeed({ ...(environment.createSource ? { create: environment.createSource } : {}), visible: () => !document.hidden, receive: data => { streamAlive = true; state = snapshots.accept(data); render(); }, error: () => { streamAlive = false; if (state) render(); else setHtml(main, `<div class="notice">${tr("ui.could_not_connect_to_the_local_service")}</div>`); } });
   document.addEventListener('visibilitychange', () => { stream.sync(); if (!document.hidden) render(); });
   window.addEventListener('pagehide', () => stream.close());
   window.addEventListener('pageshow', () => stream.sync());

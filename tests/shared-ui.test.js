@@ -125,18 +125,51 @@ for (const [layout, createView] of [['page', pageView], ['widget', widgetView]])
     const create = view.apiCalls.find(call => call.path === '/api/tasks');
     assert.deepEqual(JSON.parse(create.options.body), { name: '中文工作', cwd: 'E:\\fixture', prompt: 'Goal', continuous: true });
     await view.action(layout === 'page' ? 'choose-thread' : 'select-session', 'chat');
-    await view.submit('import-form', { note: 'Local note', continuationMessage: 'Continue this' }, { id: 'chat' });
+    await view.submit('import-form', { note: 'Local note', continuationMessage: 'Continue this', quotaMonitoring:'on' }, { id: 'chat' });
     const imported = view.apiCalls.find(call => call.path === '/api/import');
-    assert.deepEqual(JSON.parse(imported.options.body), { threadId: 'chat', note: 'Local note', continuationMessage: 'Continue this', startMonitoring: false });
+    assert.deepEqual(JSON.parse(imported.options.body), { threadId: 'chat', note: 'Local note', continuationMessage: 'Continue this', startMonitoring: false, completionMonitoring: false, quotaMonitoring:true, completionRepeat:false, completionMaxSends:20 });
     view.visible(false); if (layout === 'widget') view.desktop({ visible: false });
   });
 
   test(`${layout} can enable monitoring while adding a chat`, async () => {
     const state = snapshot([]), view = createView({ request: async () => state });
     await view.flush(); view.message(0, state); await view.action(layout === 'page' ? 'choose-thread' : 'select-session', 'chat');
-    await view.submit('import-form', { note: 'Local note', continuationMessage: 'Continue this', startMonitoring: 'on' }, { id: 'chat' });
+    await view.submit('import-form', { note: 'Local note', continuationMessage: 'Continue this', startMonitoring: 'on', quotaMonitoring:'on' }, { id: 'chat' });
     const imported = view.apiCalls.find(call => call.path === '/api/import');
-    assert.deepEqual(JSON.parse(imported.options.body), { threadId: 'chat', note: 'Local note', continuationMessage: 'Continue this', startMonitoring: true });
+    assert.deepEqual(JSON.parse(imported.options.body), { threadId: 'chat', note: 'Local note', continuationMessage: 'Continue this', startMonitoring: true, completionMonitoring: false, quotaMonitoring:true, completionRepeat:false, completionMaxSends:20 });
+    view.visible(false); if (layout === 'widget') view.desktop({ visible: false });
+  });
+}
+
+for (const [layout, createView] of [['page', pageView], ['widget', widgetView]]) {
+  test(`${layout} saves a separate completion message and toggle without changing quota message`, async () => {
+    const task = watched(), state = snapshot([task]);
+    task.completionMessage = '</textarea><script>自定义</script><SCRIPT>大写标签</SCRIPT>'; task.completionMonitoring = true;
+    const view = createView({ task: async (_path, options) => {
+      if (options.method !== 'POST') return { task };
+      const body = JSON.parse(options.body);
+      assert.deepEqual(body, { action: 'completion', value: { enabled: false, message: '下一项工作\n先验证', quotaMonitoring:true,repeat:true,maxSends:3 } });
+      task.completionMessage = body.value.message; task.completionMonitoring = body.value.enabled; return state;
+    } });
+    await view.flush(); view.message(0, state); await view.action('detail', task.id); await view.flush();
+    await view.action('edit-completion', task.id);
+    assert.match(view.element('#modal-body').innerHTML, /name="completionMonitoring"[^>]*checked/);
+    assert.match(view.element('#modal-body').innerHTML, /&lt;script&gt;/);
+    assert.match(view.element('#modal-body').innerHTML, /&lt;SCRIPT&gt;/);
+    assert.doesNotMatch(view.element('#modal-body').innerHTML, /<script\b/i);
+    await view.submit('completion-form', { completionMessage: '下一项工作\n先验证', quotaMonitoring:'on',completionRepeat:'on',completionMaxSends:'3' }, { id: task.id });
+    assert.equal(task.continuationMessage, 'Saved message'); assert.equal(task.completionMonitoring, false);
+    assert.equal(view.element('#modal').open, false);
+    view.visible(false); if (layout === 'widget') view.desktop({ visible: false });
+  });
+
+  test(`${layout} imports both messages independently and enables only the requested switches`, async () => {
+    const state = snapshot([]), view = createView({ request: async () => state });
+    await view.flush(); view.message(0, state); await view.action(layout === 'page' ? 'choose-thread' : 'select-session', 'chat');
+    assert.doesNotMatch(view.element('#modal-body').innerHTML, /name="completionMonitoring"[^>]*checked/);
+    await view.submit('import-form', { continuationMessage: '恢复额度', completionMonitoring: 'on', completionMessage: '继续下一步', startMonitoring: 'on',completionRepeat:'on',completionMaxSends:'3' }, { id: 'chat' });
+    const imported = view.apiCalls.find(call => call.path === '/api/import');
+    assert.deepEqual(JSON.parse(imported.options.body), { threadId: 'chat', continuationMessage: '恢复额度', startMonitoring: true, completionMonitoring: true, completionMessage: '继续下一步',quotaMonitoring:false,completionRepeat:true,completionMaxSends:3 });
     view.visible(false); if (layout === 'widget') view.desktop({ visible: false });
   });
 }

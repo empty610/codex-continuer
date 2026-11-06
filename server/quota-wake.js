@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { buckets, quotaAvailable, QUOTA_TTL_MS } from './policy.js';
 import { defaultContinuation } from '../public/i18n.js';
 import { readThreadReply } from './thread-reply.js';
-import { enforceWakeLimit, isEnabledMonitorTask } from './monitor-task.js';
+import { enforceWakeLimit, isEnabledQuotaMonitorTask } from './monitor-task.js';
 
 export { resetWake, enforceWakeLimit } from './monitor-task.js';
 
@@ -16,7 +16,7 @@ export async function tickQuotaWake(manager, epoch = manager.scheduleEpoch) {
   if (!manager.wakeSampledAt || now - manager.wakeSampledAt > QUOTA_TTL_MS) return;
   for (const task of manager.state.tasks) {
     if (!manager.canSchedule(epoch)) break;
-    if (!isEnabledMonitorTask(task)) continue;
+    if (!isEnabledQuotaMonitorTask(task)) continue;
     if (enforceWakeLimit(task, manager.state.settings.maxWakeSends)) { manager.changed(); continue; }
     const wake = task.wake ||= { armed: false, delivery: 'idle' };
     if (quotaExhausted(manager.wakeQuota)) {
@@ -35,7 +35,7 @@ export async function tickQuotaWake(manager, epoch = manager.scheduleEpoch) {
     }
     manager.wakeExecutions.set(task.id, wake);
     try {
-      const permitted = () => manager.canSchedule(epoch) && isEnabledMonitorTask(task)
+      const permitted = () => manager.canSchedule(epoch) && isEnabledQuotaMonitorTask(task)
         && task.wake === wake && manager.state.tasks.includes(task) && (task.sentCount || 0) < manager.state.settings.maxWakeSends
         && quotaAvailable(manager.wakeQuota, manager.wakeSampledAt, manager.state.settings.minimumRemaining);
       const inspectReply = async () => {
@@ -66,7 +66,10 @@ export async function tickQuotaWake(manager, epoch = manager.scheduleEpoch) {
           task.status = task.continuous ? 'monitoring' : 'paused';
         } else if (error.waitForReply) {
           wake.delivery = 'pending'; task.waitReason = 'thread'; task.retryAt = Date.now() + manager.state.settings.pollSeconds * 1000;
-        } else if (error.cancelled) { if (wake.delivery === 'sending') wake.delivery = 'pending'; }
+        } else if (error.cancelled) {
+          if (task.quotaMonitoring === false) task.wake={armed:false,delivery:'idle'};
+          else if (wake.delivery === 'sending') wake.delivery = 'pending';
+        }
         else if (error.safeToRetry && task.continuous && task.status !== 'paused') {
           wake.delivery = 'pending'; task.waitReason = 'desktop'; task.retryAt = Date.now() + 60000;
         } else { wake.delivery = 'uncertain'; task.waitReason = null; task.retryAt = 0; if (task.status !== 'paused') task.status = 'blocked'; }

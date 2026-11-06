@@ -1,5 +1,5 @@
 import { t as tr, systemText, defaultContinuation } from './i18n.js';
-import { taskMode, wakeExplanation } from './task-mode.js';
+import { taskMode, wakeExplanation, monitorSwitches } from './task-mode.js';
 import { escapeHtml as esc } from './html.js';
 import { icon } from './icons.js';
 
@@ -81,6 +81,7 @@ function pageTaskCard(view) {
       ${badge(view)}
     </div>
     ${monitorNote(view)}
+    ${monitorSwitches(task,esc,'page')}
     <div class="task-progress">
       <div class="meter ${task.status === 'completed' ? 'green' : ''}"><span style="width:${progress}%"></span></div>
       <span>${esc(mode.progress || view.progressText)}</span>
@@ -106,6 +107,7 @@ function widgetTaskCard(view) {
     </div>
     <div class="path" title="${esc(task.cwd)}">${esc(task.cwd)}</div>
     ${monitorNote(view)}
+    ${monitorSwitches(task,esc,'widget')}
     <div class="progress">
       <div class="meter"><i style="width:${view.progress}%"></i></div>
       <span>${mode.wake ? tr("ui.view_in_original_chat") : esc(view.progressText)}</span>
@@ -129,8 +131,14 @@ export function taskCardHtml(task, settings, layout = 'page') {
 
 function monitorDetails(view, settings, canEdit, hint) {
   const task = view.task;
+  const completionCap=task.completionRepeat===false?1:(task.completionMaxSends??100);
+  if (!canEdit) return `<p class="${hint}">${tr('ui.details_pending')}</p><button type="button" data-action="edit-message" data-id="${esc(task.id)}" disabled>${tr('ui.edit_continuation_message')}</button>`;
   return `<p class="detail-summary"><strong>${tr("ui.continuation_message")}</strong><br>${esc(task.continuationMessage?.trim() || defaultContinuation(settings.language))}</p>
     <button type="button" data-action="edit-message" data-id="${esc(task.id)}" ${canEdit ? '' : 'disabled'}>${tr("ui.edit_continuation_message")}</button>
+    <p class="detail-summary"><strong>${tr('ui.completion_message')}</strong> · ${tr(task.completionMonitoring ? 'ui.enabled' : 'ui.disabled')}<br>${esc(task.completionMessage?.trim() || defaultContinuation(settings.language))}</p>
+    <button type="button" data-action="edit-completion" data-id="${esc(task.id)}" ${canEdit ? '' : 'disabled'}>${tr('ui.edit_completion')}</button>
+    <p class="${hint}">${tr('ui.completion_run_count',{count:task.completionSends||0,limit:completionCap})}</p>
+    <p class="${hint}">${tr('ui.completion_controls_hint')}</p>
     <p class="${hint}">${esc(wakeExplanation)}</p>`;
 }
 
@@ -170,7 +178,7 @@ export function taskDetailHtml(task, settings, { layout = 'page', canEdit = fals
   const thread = page && task.threadId ? `<p class="subtitle">${tr("ui.chat")}${esc(task.threadId)}</p>` : '';
   const actions = page
     ? `<div class="modal-actions">${complete}<button class="primary" data-action="close">${tr("ui.close")}</button></div>` : complete;
-  const description = `<p class="detail-summary">${esc(view.mode.description)}</p>`;
+  const description = `<p class="detail-summary">${esc(view.mode.wake && !canEdit ? (task.notePreview || tr('ui.details_pending')) : view.mode.description)}</p>`;
   const details = view.mode.wake ? monitorDetails(view, settings, canEdit, hint) : planDetails(view, layout);
   return `${page ? context + description : description + context}${details}${activity}${thread}${outputDetails(view, layout, hint)}${actions}`;
 }

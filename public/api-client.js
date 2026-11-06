@@ -3,7 +3,7 @@ import { t as tr } from './i18n.js';
 import { isMessage, message, MessageError } from './message.js';
 
 // Both interfaces use the same transport policy and bounded request lifetime.
-export function createApiClient({ request = (...args) => fetch(...args), timeoutMs = 35000 } = {}) {
+export function createApiClient({ request = (...args) => fetch(...args), timeoutMs = 35000, acceptSnapshot = data => data } = {}) {
   return async function api(path, body) {
     const write = body !== undefined;
     const response = await request(path, {
@@ -18,6 +18,6 @@ export function createApiClient({ request = (...args) => fetch(...args), timeout
     });
     const data = await response.json();
     if (!response.ok) throw new MessageError(isMessage(data.errorInfo) ? data.errorInfo : data.error ? null : message('ui.request_failed'), data.error || tr("ui.request_failed"));
-    return data;
+    return Array.isArray(data.tasks) && data.settings ? acceptSnapshot(data) : data;
   };
 }

@@ -9,7 +9,7 @@ function Test-ContinuerCommand($process, [string]$file) {
 if ($Phase -eq 'watcher') {
     $continuerStatusFile = Join-Path $DataDir 'autostart-status.json'
     if (-not (Test-Path -LiteralPath $continuerStatusFile)) { exit 0 }
-    $continuerSaved = Get-Content -LiteralPath $continuerStatusFile -Raw | ConvertFrom-Json
+    $continuerSaved = Get-Content -LiteralPath $continuerStatusFile -Raw -Encoding UTF8 | ConvertFrom-Json
     if (-not $continuerSaved.pid -or -not $continuerSaved.pluginRoot -or [IO.Path]::GetFullPath($continuerSaved.pluginRoot).TrimEnd('\') -ne $continuerRoot) { exit 0 }
     $continuerProcess = Get-CimInstance Win32_Process -Filter "ProcessId=$([int]$continuerSaved.pid)"
     $continuerNative = $continuerProcess -and $continuerProcess.ExecutablePath -eq (Join-Path $continuerRoot 'desktop/continuer-monitor.exe') -and $continuerProcess.CommandLine -match '(?:^|\s)"?--watch"?(?:\s|$)'

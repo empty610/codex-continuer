@@ -50,3 +50,12 @@ body:not(.browser).is-switching header{-webkit-app-region:no-drag}
 #language{background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:4px;padding:3px 1px;font-size:10px;max-width:69px;-webkit-app-region:no-drag}
 html[lang=en-US] .brand small{font-size:8px;letter-spacing:0}html[lang=en-US] .brand strong{font-size:12px}html[lang=en-US] .scheduler strong>span{display:none}
 html[lang=en-US] #mini-window{font-size:7px;letter-spacing:0}html[lang=en-US] .task-bottom{gap:6px;flex-wrap:wrap}html[lang=en-US] .task-bottom>div{margin-left:auto}
+
+/* Both views resize explicitly while preserving the frameless transparent window. */
+#panel-width,#panel-height{width:130px;padding:0;accent-color:var(--accent);border:0;background:transparent}
+#resize-widget{position:absolute;right:0;bottom:0;width:22px;height:22px;padding:0;border:0;background:transparent;color:var(--accent);opacity:.65;cursor:nwse-resize;touch-action:none;user-select:none;-webkit-app-region:no-drag;z-index:5;font-size:16px;line-height:1}
+#resize-widget:hover,#resize-widget:focus-visible{opacity:1;background:var(--tint)}
+.is-switching #resize-widget{pointer-events:none;visibility:hidden}
+.browser:not(.collapsed) .shell{width:min(calc(var(--panel-width,414px) + 2px),100%);height:min(calc(var(--panel-height,702px) + 2px),calc(100dvh - 16px))}
+.browser #panel{width:min(var(--panel-width,414px),calc(100vw - 18px));height:min(var(--panel-height,702px),calc(100dvh - 18px))}
+.monitor-switches{display:flex;gap:12px;flex-wrap:wrap;font-size:10px;margin:10px 0}.monitor-switches label{display:inline-flex;gap:5px;align-items:center}

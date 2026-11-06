@@ -6,10 +6,11 @@ import { EventEmitter } from 'node:events';
 const require=createRequire(import.meta.url);
 const { createDesktopRuntime } = require('../desktop/runtime.cjs');
 
-function fixture(x=700,y=300,nativeMonitor=true,rounding=0) {
+function fixture(x=700,y=300,nativeMonitor=true,rounding=0,options={}) {
   let now=0,serial=0,bounds={x,y,width:160+rounding,height:160+rounding},top=false;
   const timers=new Map(),updates=[],children=[];
-  const prefs={follow:false,expanded:false,hidden:false,compactSize:160,offsets:{},positions:{}};
+  const prefs={follow:false,expanded:false,hidden:false,compactSize:160,offsets:{},positions:{},...options.prefs};
+  let saved;
   const window={getBounds:()=>({...bounds}),setBounds:next=>{bounds={...next,width:next.width+rounding,height:next.height+rounding};updates.push({...next});},
     isDestroyed:()=>false,isVisible:()=>true,isFocused:()=>true,isAlwaysOnTop:()=>top,
     setAlwaysOnTop:value=>{top=value;},focus:()=>{},hide:()=>{},webContents:{send:()=>{}}};
@@ -17,10 +18,10 @@ function fixture(x=700,y=300,nativeMonitor=true,rounding=0) {
     whenReady:()=>({then:()=>({catch:()=>{}})})};
   const layout=createDesktopRuntime({
     window,
-    load:name=>name==='electron'?{app,screen:{getDisplayMatching:()=>({workArea:{x:0,y:0,width:1920,height:1080}}),screenToDipRect:(_window,rect)=>rect}}:
+    load:name=>name==='electron'?{app,screen:{getDisplayMatching:()=>({workArea:options.workArea || {x:0,y:0,width:1920,height:1080}}),screenToDipRect:(_window,rect)=>rect}}:
       name==='../server/config.cjs'?{dataDir:'fixture-data',port:4317,appInfo:()=>({})}:
       name==='../server/logging.cjs'?{installLogs(){}}:
-      name==='node:fs'?{mkdirSync:()=>{},readFileSync:()=>JSON.stringify(prefs),writeFileSync:()=>{},existsSync:()=>nativeMonitor}:
+      name==='node:fs'?{mkdirSync:()=>{},readFileSync:()=>JSON.stringify(prefs),writeFileSync:(file,text)=>{if(file.includes('preferences'))saved=JSON.parse(text);},existsSync:()=>nativeMonitor}:
       name==='node:child_process'?{spawn:(command,args,options)=>{const child=new EventEmitter();Object.assign(child,{command,args,options});child.stdout={};child.stderr={resume:()=>{}};child.kill=()=>{child.killed=true;};children.push(child);return child;}}:
       name==='node:readline'?{createInterface:({input})=>{const lines=new EventEmitter();lines.close=()=>{lines.closed=true;};input.lines=lines;return lines;}}:
       name.startsWith('./')?require('../desktop/'+name.slice(2)):require(name),
@@ -29,7 +30,7 @@ function fixture(x=700,y=300,nativeMonitor=true,rounding=0) {
   });
   function advance(ms=450){for(let elapsed=0;elapsed<ms;elapsed+=16){now+=16;for(const [id,timer] of [...timers])if(now>=timer.at){timers.delete(id);timer.callback();}}}
   function toggle(expanded){layout.changeExpanded(expanded);layout.show(true,true);}
-  return {layout,toggle,advance,updates,children,get top(){return top;},get bounds(){return {...bounds};},move:next=>{bounds={...bounds,...next};},get timers(){return timers.size;}};
+  return {layout,toggle,advance,updates,children,get top(){return top;},get saved(){return saved;},get bounds(){return {...bounds};},move:next=>{bounds={...bounds,...next};},get timers(){return timers.size;}};
 }
 
 test('show and mode switches leave the card in the normal window layer',()=>{
@@ -154,5 +155,65 @@ test('repeated expansion does not accumulate fractional-DPI rounding or overwrit
       f.toggle(false);f.advance();
       assert.deepEqual(f.bounds,{x:1300,y:100,width:160+rounding,height:160+rounding});
     }
+  }
+});
+
+test('compact and panel sizes resize live, persist independently and survive a restart',()=>{
+  const f=fixture(); f.layout.resize('compact',304);
+  assert.deepEqual(f.bounds,{x:700,y:300,width:304,height:304});
+  f.toggle(true); f.advance(); const origin={x:f.bounds.x,y:f.bounds.y};
+  f.layout.resize('expanded',{width:600,height:820});
+  assert.deepEqual(f.bounds,{...origin,y:Math.min(origin.y,260),width:600,height:820});
+  assert.deepEqual(f.layout.state().panelSize,{width:582,height:802});
+  assert.deepEqual(f.saved.panelSize,{width:600,height:820}); assert.equal(f.saved.compactSize,304);
+  for(let cycle=0;cycle<6;cycle++) {
+    f.toggle(false);f.advance();assert.deepEqual(f.bounds,{x:700,y:300,width:304,height:304});
+    f.toggle(true);f.advance();assert.equal(f.bounds.width,600);assert.equal(f.bounds.height,820);
+  }
+  const restored=fixture(700,300,true,0,{prefs:f.saved}); restored.layout.show();
+  assert.equal(restored.bounds.width,600); assert.equal(restored.bounds.height,820);
+  restored.toggle(false);restored.advance();assert.equal(restored.bounds.width,304);
+});
+
+test('size settings for the other view leave the current window untouched',()=>{
+  const f=fixture();f.layout.show();const original=f.bounds;
+  f.layout.resize('expanded',{width:560,height:800});assert.deepEqual(f.bounds,original);
+  f.toggle(true);f.advance();const expanded=f.bounds;
+  f.layout.resize('compact',320);assert.deepEqual(f.bounds,expanded);
+  f.toggle(false);f.advance();assert.equal(f.bounds.width,320);
+});
+
+test('resizing a followed panel updates its offset without tracker snapback or fractional DPI creep',()=>{
+  const f=fixture(700,300,true,1);f.layout.setFollow(true);
+  const tracker=f.children[0],anchor={found:true,visible:true,x:0,y:0,width:1600,height:1000};
+  tracker.stdout.lines.emit('line',JSON.stringify(anchor));f.toggle(true);f.advance();
+  f.layout.resize('expanded',{width:556,height:780});const resized=f.bounds;
+  for(let i=0;i<20;i++)tracker.stdout.lines.emit('line',JSON.stringify(anchor));
+  assert.deepEqual(f.bounds,resized);
+  tracker.stdout.lines.emit('line',JSON.stringify({...anchor,x:15,y:10}));
+  assert.equal(f.bounds.x,resized.x+15);assert.equal(f.bounds.y,resized.y+10);
+});
+
+test('preferred panel size is validated and screen clamping never overwrites the saved preference',()=>{
+  const workArea={x:0,y:0,width:480,height:600};
+  const f=fixture(20,20,true,0,{workArea,prefs:{panelSize:{width:'bad',height:-5}}});
+  assert.deepEqual(f.layout.state().preferredPanelSize,{width:432,height:400});
+  f.toggle(true);f.advance();f.layout.resize('expanded',{width:2000,height:2000});
+  assert.deepEqual(f.bounds,{x:0,y:0,width:480,height:600});
+  assert.deepEqual(f.saved.panelSize,{width:960,height:1200});
+  assert.deepEqual(f.layout.state().panelSize,{width:462,height:582});
+  for(const value of [{width:NaN,height:600},{width:500,height:Infinity},null])assert.throws(()=>f.layout.resize('expanded',value));
+  assert.throws(()=>f.layout.resize('compact','320'));
+  assert.deepEqual(f.saved.panelSize,{width:960,height:1200});
+});
+
+test('compact resizing stays square when either screen dimension is smaller than the preferred card',()=>{
+  for(const workArea of [{x:0,y:0,width:1000,height:300},{x:0,y:0,width:300,height:1000}]) {
+    const f=fixture(20,20,true,0,{workArea});
+    f.layout.resize('compact',420);
+    assert.equal(f.bounds.width,300);assert.equal(f.bounds.height,300);
+    assert.equal(f.saved.compactSize,420,'Screen clamping must not replace the preferred size');
+    for(let i=0;i<3;i++)f.layout.show();
+    assert.equal(f.bounds.width,f.bounds.height);
   }
 });

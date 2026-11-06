@@ -1,5 +1,14 @@
 // Service-owned messages use stable IDs and explicit parameters.
 export const systemMessages = Object.freeze({
+  "error.completion_send_limit": { "zh": "回答续作发送次数须为 1–100 的整数，计数须为非负整数", "en": "Completion send limit must be an integer from 1 to 100; counts must be nonnegative integers." },
+  "error.choose_monitor": { "zh": "请先开启回答监测或额度监测，再开启监测总开关", "en": "Enable reply or quota monitoring before starting the master monitor." },
+  "task.completion_limit": { "zh": "本轮回答续作已发送 {count}/{limit} 次，回答监测已关闭；额度监测仍按其独立开关运行", "en": "Completion follow-ups sent: {count}/{limit}. Reply monitoring is off; quota monitoring follows its separate switch." },
+  "log.completion_settings_updated": { "zh": "完整回答续作设置已更新", "en": "Completion follow-up settings updated" },
+  "task.monitoring_replies_and_quota": { "zh": "正在监测完整回答与额度恢复，满足条件后发送对应的独立续作消息", "en": "Monitoring complete replies and quota recovery. The corresponding follow-up will be sent when its conditions are met." },
+  "task.completion_sending": { "zh": "已检测到完整回答，正在发送独立的继续消息", "en": "Complete reply detected. Sending the separate follow-up message." },
+  "task.completion_queued": { "zh": "完整回答后的继续消息已入队；继续监测，请在原聊天确认结果", "en": "Completion follow-up queued. Monitoring continues; check results in the original chat." },
+  "task.completion_queued_paused": { "zh": "完整回答后的继续消息已入队，监测已暂停；已入队消息无法撤回", "en": "Completion follow-up queued; monitoring is paused. Queued messages cannot be recalled." },
+  "task.completion_changed": { "zh": "原聊天最新轮次已改变或尚未形成完整回答，本次未发送继续消息，稍后重试", "en": "The latest turn changed or no longer has a complete reply. Follow-up was not sent; retrying later." },
   "runtime.widget_ready": { "zh": "挂件已就绪。可使用 Ctrl+Alt+C 展开。", "en": "The widget is ready. Press Ctrl+Alt+C to expand it." },
   "runtime.port_in_use": { "zh": "端口属于其他应用", "en": "Port belongs to another application" },
   "runtime.build_mismatch": { "zh": "运行服务与当前插件构建不一致，请先停止并重新启动 Continuer", "en": "The service and plugin builds differ. Stop and restart Continuer." },

@@ -6,7 +6,7 @@ function createDesktopRuntime({ load = require, processInfo = process, timing = 
   const { createInterface } = load('node:readline');
   const { join } = load('node:path');
   const { readFileSync, writeFileSync, mkdirSync, existsSync } = load('node:fs');
-  const { place, placeIndependent, expandFromCard, offsetFrom, sizes, compactSize, samePlacementContext, restoreModePosition } = load('./geometry.cjs');
+  const { place, placeIndependent, expandFromCard, offsetFrom, sizes, compactSize, expandedSize, samePlacementContext, restoreModePosition } = load('./geometry.cjs');
   const { createPointerDrag } = load('./pointer-drag.cjs');
   const runtimeConfig = load('../server/config.cjs');
   const logging = load('../server/logging.cjs');
@@ -24,6 +24,7 @@ function createDesktopRuntime({ load = require, processInfo = process, timing = 
   const preferenceFile = widget.preferences;
   let prefs = { follow: true, expanded: false, hidden: false, compactSize: 256, offsets: {}, positions: {} };
   try { prefs = { ...prefs, ...JSON.parse(readFileSync(preferenceFile, 'utf8')) }; } catch {}
+  prefs.panelSize = expandedSize(prefs.panelSize);
   let preferenceError = null;
   let nativeText = () => 'Codex Continuer', refreshMenu = () => {};
   const save = () => { try { writeFileSync(preferenceFile, JSON.stringify(prefs)); preferenceError = null; } catch (error) { preferenceError = error.message; console.error(`挂件设置未保存：${error.message}`); } };
@@ -34,8 +35,9 @@ function createDesktopRuntime({ load = require, processInfo = process, timing = 
   let settledPlacement, restoringMode=false, expansionOrigin=null;
   let pendingTransition, transitionSequence=0, renderedExpanded=prefs.expanded;
   const mode = () => prefs.expanded ? 'expanded' : 'compact';
-  const placementContext = () => ({ mode:mode(),follow:prefs.follow,compactSize:compactSize(prefs.compactSize),anchor:anchor ? {...anchor} : null });
-  if (processInfo.argv.includes('--auto')) prefs.hidden = false;
+  const placementContext = () => ({ mode:mode(),follow:prefs.follow,compactSize:compactSize(prefs.compactSize),panelWidth:prefs.panelSize.width,panelHeight:prefs.panelSize.height,anchor:anchor ? {...anchor} : null });
+  if (!processInfo.argv.includes('--quit')) prefs.hidden = false;
+  let revealOnReady = !processInfo.argv.includes('--auto'), exitReason = 'user-quit';
   function diagnostics() {
     if (!win || win.isDestroyed() || dragging || pointerDrag?.active) return;
     const next = JSON.stringify({ ...widgetInfo(), pid: processInfo.pid, ready: isReady, visible: win.isVisible(), ...state(), bounds: win.getBounds() });
@@ -47,7 +49,13 @@ function createDesktopRuntime({ load = require, processInfo = process, timing = 
   else if (processInfo.argv.includes('--quit')) { app.whenReady().then(quitAll); }
   else {
     app.on('second-instance', (_event, argv, _directory, identity) => { if (!matchesWidgetIdentity(identity, widget.identity, processInfo.platform)) return; if (argv.includes('--quit')) { void quitAll(); return; } if (closing) return; prefs.hidden = false; if (!argv.includes('--auto')) changeExpanded(true); save(); show(!argv.includes('--auto')); });
-    app.whenReady().then(start).catch(error => { dialog.showErrorBox(nativeText("native.continuer_could_not_start"), error.message); app.quit(); });
+    app.whenReady().then(start).catch(error => {
+      if (closing) return;
+      // Startup failure is retryable; only an explicit quit stops the service
+      // and writes the persistent user-exit latch.
+      exitReason = 'startup-failed'; shutdownComplete = true;
+      dialog.showErrorBox(nativeText("native.continuer_could_not_start"), error.message); app.quit();
+    });
   }
   function quitAll() {
     if (quitting) return quitting;
@@ -63,7 +71,7 @@ function createDesktopRuntime({ load = require, processInfo = process, timing = 
     })();
     return quitting;
   }
-  function state() { return { follow: prefs.follow, expanded: prefs.expanded, hidden: prefs.hidden, preferenceError, tracking: !!anchor, visible: !!win?.isVisible(), compactSize: compactSize(prefs.compactSize), transitioning: !!boundsTimer, transition: pendingTransition ? {id:pendingTransition.id,fromExpanded:pendingTransition.fromExpanded} : null, panelSize, platform: processInfo.platform }; }
+  function state() { return { follow: prefs.follow, expanded: prefs.expanded, hidden: prefs.hidden, preferenceError, tracking: !!anchor, visible: !!win?.isVisible(), compactSize: compactSize(prefs.compactSize), preferredPanelSize: {...prefs.panelSize}, transitioning: !!boundsTimer, transition: pendingTransition ? {id:pendingTransition.id,fromExpanded:pendingTransition.fromExpanded} : null, panelSize, platform: processInfo.platform }; }
   function cancelTransition() {
     clearTimeout(boundsTimer); boundsTimer=null; pendingTransition=null;
   }
@@ -102,11 +110,11 @@ function createDesktopRuntime({ load = require, processInfo = process, timing = 
     const saved = prefs.positions[mode()];
     const following = prefs.follow && anchor;
     const target = following ? anchor : { ...(saved || current), width: (saved || current).width + 16, height: (saved || current).height + 16 };
-    const size = prefs.expanded ? sizes.expanded : { width: compactSize(prefs.compactSize), height: compactSize(prefs.compactSize) };
+    const size = prefs.expanded ? {...prefs.panelSize} : { width: compactSize(prefs.compactSize), height: compactSize(prefs.compactSize) };
     const offset = prefs.follow && anchor ? (prefs.offsets[mode()] || prefs.offsets[prefs.expanded ? 'compact' : 'expanded']) : undefined;
     const desired = { x: target.x + target.width - size.width - (offset?.right ?? 16), y: target.y + target.height - size.height - (offset?.bottom ?? 16), ...size };
     const display = screen.getDisplayMatching(fromCard || desired);
-    panelSize = { width: Math.min(sizes.expanded.width,display.workArea.width)-18, height: Math.min(sizes.expanded.height,display.workArea.height)-18 };
+    panelSize = { width: Math.min(prefs.panelSize.width,display.workArea.width)-18, height: Math.min(prefs.panelSize.height,display.workArea.height)-18 };
     if (!prefs.expanded) size.width=size.height=Math.min(size.width,display.workArea.width,display.workArea.height);
     let next = fromCard ? expandFromCard(fromCard,display.workArea,size) : following ? place(target, display.workArea, size, offset) : placeIndependent(saved,current,display.workArea,size);
     if (restoringMode && !fromCard) {
@@ -127,7 +135,13 @@ function createDesktopRuntime({ load = require, processInfo = process, timing = 
     } else { cancelTransition(); renderedExpanded=prefs.expanded; settle(); }
   }
   function show(force = false, animate = false) {
-    if (!win || !isReady) return;
+    if (closing) return;
+    if (!win || !isReady) {
+      // Second-instance, tray and shortcut requests can precede renderer-ready.
+      // Preserve their foreground intent until there is a window to reveal.
+      if (force) revealOnReady = true;
+      return;
+    }
     // Tracking still records the latest anchor, but must not query/mutate the
     // window, send renderer state, or write diagnostics during a user drag.
     if (!force && !prefs.hidden && (dragging || pointerDrag?.active)) return;
@@ -180,7 +194,40 @@ function createDesktopRuntime({ load = require, processInfo = process, timing = 
     prefs.expanded=expanded;
   }
   function setFollow(value) { prefs.follow = value; syncTracker(); }
+  function resetPosition() {
+    pointerDrag?.finish(); cancelTransition();
+    settledPlacement = null; restoringMode = false; expansionOrigin = null;
+    prefs.offsets = {}; prefs.positions = {};
+    if (win && !win.isDestroyed() && !(prefs.follow && anchor)) {
+      const area = screen.getDisplayMatching(win.getBounds()).workArea;
+      const size = prefs.expanded ? prefs.panelSize : {width:compactSize(prefs.compactSize),height:compactSize(prefs.compactSize)};
+      win.setBounds(place(area, area, size), false);
+    }
+    save(); show(true);
+  }
+  function resize(view, value) {
+    if (!['compact','expanded'].includes(view)) throw new Error('Unsupported size mode');
+    if (view === 'compact' ? !Number.isFinite(value) : !Number.isFinite(value?.width) || !Number.isFinite(value?.height)) throw new Error('Invalid widget size');
+    pointerDrag?.finish(); finishTransition(); dragging=false;
+    if (view === 'compact') prefs.compactSize=compactSize(value);
+    else prefs.panelSize=expandedSize(value);
+    if ((view === 'expanded') === prefs.expanded && win && !win.isDestroyed()) {
+      // Resize from the current top-left, independently of remembered follow offsets.
+      const current=win.getBounds(), workArea=screen.getDisplayMatching(current).workArea;
+      const edge=Math.min(prefs.compactSize,workArea.width,workArea.height);
+      const size=prefs.expanded ? prefs.panelSize : {width:edge,height:edge};
+      const next=placeIndependent(current,current,workArea,size);
+      win.setBounds(next,false); renderedExpanded=prefs.expanded;
+      prefs.positions[mode()]=next;
+      if (prefs.follow && anchor) prefs.offsets[mode()]=offsetFrom(anchor,next);
+      panelSize={width:Math.min(prefs.panelSize.width,workArea.width)-18,height:Math.min(prefs.panelSize.height,workArea.height)-18};
+      restoringMode=false; expansionOrigin=null;
+    }
+    settledPlacement=placementContext();
+    save(); show(); return state();
+  }
   function syncTracker() {
+    if (closing) return;
     if (processInfo.platform !== 'win32') { prefs.follow = false; return; }
     if (!prefs.follow) {
       const previous = tracker; tracker = null;
@@ -214,10 +261,13 @@ function createDesktopRuntime({ load = require, processInfo = process, timing = 
     child.on('exit', ended);
   }
   async function start() {
+    if (closing) return;
     const { interfaceText } = await import('../public/i18n.js');
     nativeText = text => interfaceText(text, prefs.language || 'zh');
     const runtime = await import('../plugin/runtime.js');
+    if (closing) return;
     await runtime.ensureService();
+    if (closing) return;
     const display = screen.getPrimaryDisplay().workArea;
     win = new BrowserWindow({ x: display.x + display.width - sizes.compact.width - 16, y: display.y + display.height - sizes.compact.height - 16, ...sizes.compact, show: false, alwaysOnTop: false, frame: false, thickFrame: false, roundedCorners: false, transparent: true, backgroundColor: '#00000000', resizable: false, skipTaskbar: true, hasShadow: false, autoHideMenuBar: true, title: 'Codex Continuer Widget', webPreferences: { preload: join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, devTools: false } });
     win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -262,9 +312,15 @@ function createDesktopRuntime({ load = require, processInfo = process, timing = 
     ipcMain.handle('continuer:control', (event, action, value) => {
       if (!allowed(event)) throw new Error('Untrusted widget request');
       if (action === 'language' && ['zh', 'en'].includes(value)) { if (prefs.language !== value) { prefs.language = value; save(); refreshMenu(); } return state(); }
-      if (action === 'renderer-ready') { isReady = true; show(); return state(); }
+      if (action === 'renderer-ready') { if (closing) return state(); isReady = true; show(revealOnReady); revealOnReady = false; return state(); }
       if (action === 'quit') { setImmediate(() => { void quitAll(); }); return { quitting: true }; }
       if (action === 'transition-ready') { finishTransition(value); return state(); }
+      if (action === 'compact-size') return resize('compact',value);
+      if (action === 'panel-size') return resize('expanded',value);
+      if (action === 'resize') {
+        if (value?.expanded !== prefs.expanded || boundsTimer) return state();
+        return resize(mode(),prefs.expanded ? value : value.width);
+      }
       if (action === 'drag-start') {
         if (!Number.isInteger(value) || prefs.expanded || boundsTimer || dragging) return { ok:false };
         return pointerDrag.start(value);
@@ -274,11 +330,10 @@ function createDesktopRuntime({ load = require, processInfo = process, timing = 
       if (action === 'expand' && typeof value === 'boolean') changeExpanded(value);
       else if (action === 'follow' && typeof value === 'boolean') setFollow(value)
       else if (action === 'hide') prefs.hidden = true;
-      else if (action === 'reset-position') { settledPlacement=null; prefs.offsets = {}; prefs.positions = {}; }
-      else if (action === 'compact-size' && Number.isFinite(value) && value >= 160 && value <= 420) prefs.compactSize=compactSize(value);
+      else if (action === 'reset-position') { resetPosition(); return state(); }
       else if (action === 'state') return state();
       else throw new Error('Unsupported action');
-      save(); show(action === 'expand',action === 'expand' || action === 'compact-size'); return state();
+      save(); show(action === 'expand',action === 'expand'); return state();
     });
     ipcMain.handle('continuer:pick-directory', async event => {
       if (!allowed(event)) throw new Error('Untrusted widget request');
@@ -293,7 +348,7 @@ function createDesktopRuntime({ load = require, processInfo = process, timing = 
         { label: nativeText("native.open_quota_and_work_panel"), click: reveal },
         { label: nativeText("native.follow_codex_window"), click: () => { prefs.hidden = false; setFollow(true); save(); show(); } },
         { label: nativeText("native.show_independently"), click: () => { setFollow(false); reveal(); } },
-        { label: nativeText("ui.reset_widget_position"), click: () => { settledPlacement=null; prefs.offsets = {}; prefs.positions = {}; save(); show(true); } },
+        { label: nativeText("ui.reset_widget_position"), click: resetPosition },
         { type: 'separator' },
         { label: nativeText("native.hide_to_tray"), click: () => { prefs.hidden = true; save(); show(); } },
         { label: nativeText("ui.quit_continuer"), click: () => { void quitAll(); } },
@@ -321,10 +376,10 @@ function createDesktopRuntime({ load = require, processInfo = process, timing = 
     if (!ownsInstance) return;
     if (!shutdownComplete) { event.preventDefault(); void quitAll(); return; }
     closing = true; pointerDrag?.finish(); cancelTransition(); tracker?.kill(); globalShortcut.unregisterAll(); tray?.destroy();
-    try { writeFileSync(widget.status, JSON.stringify({ ...widgetInfo(), pid: processInfo.pid, ready: false, exitReason: 'user-quit', updatedAt: Date.now() })); } catch {}
+    try { writeFileSync(widget.status, JSON.stringify({ ...widgetInfo(), pid: processInfo.pid, ready: false, exitReason, updatedAt: Date.now() })); } catch {}
   });
   app.on('window-all-closed', () => app.quit());
-  return { changeExpanded, finishTransition, show, savePosition, state, setFollow, get preferences() { return prefs; } };
+  return { changeExpanded, finishTransition, show, savePosition, state, setFollow, resize, get preferences() { return prefs; } };
 }
 
 module.exports = { createDesktopRuntime };

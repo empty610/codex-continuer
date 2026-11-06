@@ -19,17 +19,31 @@ export function turnReplyState(turn) {
 const runtimeState = thread => thread?.status?.type === 'active' ? 'active'
   : ['idle', 'notLoaded'].includes(thread?.status?.type) ? null : 'unknown';
 
-export async function readThreadReply(rpc, threadId) {
+const replySnapshot = turn => ({ state: turnReplyState(turn), turnId: typeof turn?.id === 'string' ? turn.id : null });
+
+// Return only protocol evidence, never inspected chat text.
+export async function readThreadReplySnapshot(rpc, threadId) {
   const { thread } = await rpc.call('thread/read', { threadId, includeTurns: false });
-  if (thread?.id !== threadId) return 'unknown';
+  if (thread?.id !== threadId) return { state: 'unknown', turnId: null };
   const runtime = runtimeState(thread);
-  if (runtime) return runtime;
+  if (runtime) return { state: runtime, turnId: null };
   if (thread.historyMode === 'paginated') {
     const page = await rpc.call('thread/turns/list', { threadId, limit: 1, sortDirection: 'desc', itemsView: 'full' });
-    return Array.isArray(page?.data) && page.data.length === 1 ? turnReplyState(page.data[0]) : 'unknown';
+    // Listing history and reading runtime status are separate RPCs. A new
+    // answer may start while the page is in flight; never trust the older idle.
+    const { thread: current } = await rpc.call('thread/read', { threadId, includeTurns: false });
+    if (current?.id !== threadId) return { state: 'unknown', turnId: null };
+    const state = runtimeState(current);
+    if (state) return { state, turnId: null };
+    return replySnapshot(Array.isArray(page?.data) && page.data.length === 1 ? page.data[0] : null);
   }
   // Legacy app-servers expose full chronological history through thread/read.
   const { thread: history } = await rpc.call('thread/read', { threadId, includeTurns: true });
-  if (history?.id !== threadId) return 'unknown';
-  return runtimeState(history) || (Array.isArray(history.turns) ? turnReplyState(history.turns.at(-1)) : 'unknown');
+  if (history?.id !== threadId) return { state: 'unknown', turnId: null };
+  const state = runtimeState(history);
+  return state ? { state, turnId: null } : replySnapshot(Array.isArray(history.turns) ? history.turns.at(-1) : null);
+}
+
+export async function readThreadReply(rpc, threadId) {
+  return (await readThreadReplySnapshot(rpc, threadId)).state;
 }

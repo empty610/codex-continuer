@@ -24,14 +24,33 @@ test('autostart enable and disable share runtime data selection without changing
         const env = { ...process.env, CONTINUER_DATA_DIR: variant === 'environment' ? join(source, 'override-数据') : '', LOCALAPPDATA: local, CONTINUER_PORT: '4317' };
         const selected = async () => Buffer.from((await execute(process.execPath, ['-e', 'process.stdout.write(Buffer.from(require(process.argv[1]).dataDir, "utf16le").toString("base64"))', join(source, 'server/config.cjs')], { env })).stdout, 'base64').toString('utf16le');
         const before = await selected(), trace = join(source, 'host-calls.txt');
+        mkdirSync(before, { recursive: true });
+        writeFileSync(join(before, 'quit.request'), 'Previous explicit exit');
+        writeFileSync(join(before, 'autostart-status.json'), JSON.stringify({pid:424242,pluginRoot:source,state:'launched'}));
         await execute('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', join(root, 'tests/fixtures/autostart-host.ps1'),
-          '-Script', join(root, 'Enable-Autostart.ps1'), '-PluginRoot', source, '-Trace', trace, ...(disable ? ['-Disable'] : [])], { env, windowsHide: true });
+          '-Script', join(root, 'Enable-Autostart.ps1'), '-PluginRoot', source, '-Trace', trace, '-WatcherPid', '424242', ...(disable ? ['-Disable'] : [])], { env, windowsHide: true });
         assert.equal(await selected(), before, `${variant}/${disable} must not change runtime default`);
         const preferences = JSON.parse(readFileSync(join(before, 'autostart-preferences.json'), 'utf8').replace(/^\uFEFF/, ''));
         assert.equal(preferences.enabled, !disable);
         if (variant === 'source') assert.equal(existsSync(join(source, 'data')), false);
-        if (disable) assert.equal(existsSync(trace), false);
-        else assert.match(readFileSync(trace, 'utf8'), /registry:.*watch-codex\.ps1/);
+        assert.match(readFileSync(trace, 'utf8'), /stop/,'UTF-8 without BOM must preserve the Chinese watcher path');
+        assert.equal(existsSync(join(before,'quit.request')), disable, 'only explicit enable clears the user-exit latch');
+        if (disable) assert.doesNotMatch(readFileSync(trace, 'utf8'), /launch:/);
+        else {
+          assert.match(readFileSync(trace, 'utf8'), /shortcut:.*watch-codex\.ps1/);
+          assert.doesNotMatch(readFileSync(trace, 'utf8'), /registry:/);
+          const shortcut = JSON.parse(readFileSync(join(source, 'fixture-startup/CodexContinuer.lnk'), 'utf8').replace(/^\uFEFF/, ''));
+          assert.ok(shortcut.Arguments.includes(before));
+          assert.equal(shortcut.WindowStyle, 7);
+          if (variant === 'environment') {
+            await execute('powershell.exe', ['-NoProfile','-ExecutionPolicy','Bypass','-File',join(root,'tests/fixtures/autostart-host.ps1'),'-Script',join(root,'Enable-Autostart.ps1'),'-PluginRoot',source,'-Trace',trace,'-WatcherPid','424242','-ExistingRegistry','-Disable'], {env,windowsHide:true});
+            assert.equal(existsSync(join(source,'fixture-startup/CodexContinuer.lnk')),false);
+            assert.match(readFileSync(trace,'utf8'),/registry-removed/);
+          }
+        }
+        const stopTrace=join(source,'stop-calls.txt');
+        await execute('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',join(root,'tests/fixtures/autostart-host.ps1'),'-Script',join(root,'plugin/stop-owned.ps1'),'-PluginRoot',source,'-DataDir',before,'-Trace',stopTrace,'-WatcherPid','424242','-StopOnly'],{env,windowsHide:true});
+        assert.match(readFileSync(stopTrace,'utf8'),/stop/);
       }
     }
   } finally { assert.equal(dirname(realpathSync(directory)), parent); rmSync(directory, { recursive: true, force: true }); }

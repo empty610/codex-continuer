@@ -42,7 +42,16 @@ app.whenReady().then(async () => {
       layout.changeExpanded(false); layout.show(true, true); await delay();
       const compact = native.getBounds(); closeTo(compact.x, origin.x); closeTo(compact.y, origin.y);
     }
-    cases.push({ compact: origin, expanded: firstExpanded, cycles: 12 });
+    layout.resize('compact',288);await delay();
+    const resizedCompact=native.getBounds();closeTo(resizedCompact.width,288);closeTo(resizedCompact.height,288);
+    layout.changeExpanded(true);layout.show(true,true);await delay();
+    layout.resize('expanded',{width:560,height:760});await delay();
+    const resizedPanel=native.getBounds();closeTo(resizedPanel.width,Math.min(560,work.width));closeTo(resizedPanel.height,Math.min(760,work.height));
+    layout.changeExpanded(false);layout.show(true,true);await delay();
+    closeTo(native.getBounds().width,288);closeTo(native.getBounds().x,resizedCompact.x);closeTo(native.getBounds().y,resizedCompact.y);
+    layout.changeExpanded(true);layout.show(true,true);await delay();
+    closeTo(native.getBounds().width,resizedPanel.width);closeTo(native.getBounds().height,resizedPanel.height);
+    cases.push({ compact: origin, expanded: firstExpanded, resizedCompact, resizedPanel, cycles: 12 });
     native.destroy();
   }
   fs.writeFileSync(path.join(directory, 'result.json'), JSON.stringify({ passed: true, cases }));

@@ -1,9 +1,10 @@
 // Only one open detail is cached; stale responses cannot replace a newer selection.
+const version = summary => JSON.stringify([summary.detailInstanceId ?? null, summary.detailRevision ?? 0]);
 export class TaskDetails {
   constructor(request, changed, error = () => {}) { this.request = request; this.changed = changed; this.error = error; this.slot = null; }
   read(summary) {
     if (!this.slot || this.slot.id !== summary.id) this.slot = { id: summary.id };
-    const slot = this.slot, revision = summary.detailRevision ?? 0;
+    const slot = this.slot, revision = version(summary);
     if (!slot.pending && slot.revision !== revision && (!slot.retryAt || Date.now() >= slot.retryAt)) {
       slot.pending = true; slot.revision = revision;
       this.request(`/api/tasks/${encodeURIComponent(summary.id)}`).then(result => {
@@ -15,6 +16,6 @@ export class TaskDetails {
     if (slot.task && slot.taskRevision === revision) for (const key of ['cwd', 'activity', 'activityMessage', 'name']) if (key in slot.task) result[key] = slot.task[key];
     return result;
   }
-  ready(summary) { return !!this.slot?.task && this.slot.id === summary.id && !this.slot.pending && this.slot.taskRevision === (summary.detailRevision ?? 0); }
+  ready(summary) { return !!this.slot?.task && this.slot.id === summary.id && !this.slot.pending && this.slot.taskRevision === version(summary); }
   clear() { this.slot = null; }
 }

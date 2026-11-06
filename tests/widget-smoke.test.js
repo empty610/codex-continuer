@@ -33,7 +33,7 @@ for (const expanded of [false, true]) test(`hidden isolated widget is ready with
     }
     assert.equal(running, true);
     let nativeErrors = '';
-    widget = spawn(executable, ['--disable-gpu', 'desktop/main.cjs'], { env, windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
+    widget = spawn(executable, ['--disable-gpu', 'tests/fixtures/hidden-widget.cjs'], { env, windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
     widget.stderr.on('data', chunk => { nativeErrors = (nativeErrors + chunk).slice(-2500); });
     const exited = once(widget, 'exit'); let status;
     for (let i = 0; i < 120; i++) {

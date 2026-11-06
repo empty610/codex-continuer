@@ -116,6 +116,25 @@ test('HTTP and MCP imports share one reservation and persist one recovery delive
     await assert.rejects(request('/api/import', { threadId: 'not-read', startMonitoring: 'on' }), /开关/);
     await assert.rejects(request('/api/import', { threadId: 'not-read', startMonitoring: null }), /开关/);
     await assert.rejects(dispatch('continuer_import_session', { threadId: 'not-read', startMonitoring: true }, runtime), /startMonitoring/);
+    const completionImport = await request('/api/import', { threadId: '55555555-5555-4555-8555-555555555555', continuationMessage: '额度消息', completionMonitoring: true, completionMessage: '回答结束后继续', quotaMonitoring:false,completionRepeat:true,completionMaxSends:3 });
+    const completionTask = completionImport.tasks.find(task => task.threadId === '55555555-5555-4555-8555-555555555555');
+    assert.equal(completionTask.completionMonitoring, true); assert.equal(completionTask.continuous, false);
+    assert.equal(completionTask.quotaMonitoring,false);assert.equal(completionTask.completionRepeat,true);assert.equal(completionTask.completionMaxSends,3);
+    assert.equal(completionTask.completionMessage, undefined);
+    const completionDetail = (await request(`/api/tasks/${completionTask.id}`)).task;
+    assert.equal(completionDetail.completionMessage, '回答结束后继续'); assert.equal(completionDetail.continuationMessage, '额度消息');
+    await request(`/api/tasks/${completionTask.id}`, { action: 'completion', value: { enabled: false, message: '已编辑\n下一项' } });
+    const completionStored = JSON.parse(readFileSync(join(dataDir, 'demo-state.json'), 'utf8')).tasks.find(task => task.id === completionTask.id);
+    assert.equal(completionStored.completionMonitoring, false); assert.equal(completionStored.completionMessage, '已编辑\n下一项');
+    assert.equal(completionStored.continuationMessage, '额度消息'); assert.equal(completionStored.continuous, false);
+    assert.equal(completionStored.quotaMonitoring,false);assert.equal(completionStored.completionRepeat,true);assert.equal(completionStored.completionMaxSends,3);
+    await request(`/api/tasks/${completionTask.id}`,{action:'quota-monitoring',value:true});
+    assert.equal((await request(`/api/tasks/${completionTask.id}`)).task.completionMonitoring,false);
+    await request(`/api/tasks/${completionTask.id}`,{action:'completion-monitoring',value:true});
+    const independent=(await request(`/api/tasks/${completionTask.id}`)).task;
+    assert.equal(independent.quotaMonitoring,true);assert.equal(independent.completionMonitoring,true);assert.equal(independent.continuous,false);
+    await assert.rejects(request('/api/import', { threadId: 'not-read', completionMonitoring: 'on' }), /开关/);
+    await assert.rejects(request(`/api/tasks/${completionTask.id}`, { action: 'completion', value: { enabled: true, message: null } }), /续作消息/);
   } finally {
     if (child.exitCode === null) child.kill();
     await exited;

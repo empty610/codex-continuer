@@ -28,7 +28,7 @@ export class Health {
       previousExit: this.previous ? { status: this.previous.status, reason: this.previous.reason, unexpected: this.previous.status === 'running' || this.previous.status === 'crashed' } : null,
       resources: { sseClients: this.stream.clients.size, sseLimit: this.stream.limit, slowClientsDropped: this.stream.dropped, taskLimit: 100 },
       widget: { running: alive(widget?.pid), ready: !!widget?.ready && alive(widget?.pid), exitReason: widget?.exitReason || null, buildId: widget?.buildId || null },
-      autostart: { enabled: preferences?.enabled ?? null, watcherRunning: alive(watcher?.pid), status: watcher?.state || watcher?.status || null },
+      autostart: { enabled: preferences?.enabled ?? null, watcherRunning: ['watching', 'launched', 'retrying'].includes(watcher?.state || watcher?.status) && alive(watcher?.pid), status: watcher?.state || watcher?.status || null },
       projectRoot: config.root, dataDir: this.dataDir };
   }
 }

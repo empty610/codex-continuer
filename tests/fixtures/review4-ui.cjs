@@ -9,7 +9,7 @@ app.setPath('userData', path.join(directory, 'profile'));
 app.on('window-all-closed', () => {});
 const root = path.resolve(__dirname, '../..'), threadId = '77777777-7777-4777-8777-777777777777';
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-const initial = () => ({ app: 'codex-continuer', version: '0.5.1', buildId: 'fixture', protocolVersion: 4,
+const initial = () => ({ app: 'codex-continuer', version: '0.7.0', buildId: 'fixture', protocolVersion: 4,
   settings: { enabled: false, language: 'zh', pollSeconds: 30, minimumRemaining: 5, maxRounds: 20, maxWakeSends: 8 },
   connection: { status: 'connected' }, tasks: [], approvals: [], history: [], logs: [] });
 let win, server, state = initial();
@@ -29,9 +29,19 @@ app.whenReady().then(async () => {
         if (url.pathname === '/api/import') {
           const input = JSON.parse(body); imports.push(input);
           state.tasks.push({ id: 'fixture-monitor', threadId, name: 'Fixture chat', mode: 'quota-wake',
+            continuationMessage: input.continuationMessage, completionMonitoring: input.completionMonitoring, completionMessage: input.completionMessage,
+            quotaMonitoring:input.quotaMonitoring,completionRepeat:input.completionRepeat,completionMaxSends:input.completionMaxSends,completionSends:0,
             continuous: input.startMonitoring, status: input.startMonitoring ? 'monitoring' : 'paused', sentCount: 0, detailRevision: 1 });
         }
-        const result = url.pathname === '/api/threads' ? { data: [{ id: threadId, name: 'Fixture chat', cwd: 'E:\\fixture' }], nextCursor: null } : state;
+        if (url.pathname === '/api/tasks/fixture-monitor' && req.method === 'POST') {
+          const input = JSON.parse(body);
+          if(input.action==='quota-monitoring')state.tasks[0].quotaMonitoring=input.value;
+          else if(input.action==='completion-monitoring')state.tasks[0].completionMonitoring=input.value;
+          else {assert.equal(input.action,'completion');Object.assign(state.tasks[0], { completionMonitoring: input.value.enabled, completionMessage: input.value.message, quotaMonitoring:input.value.quotaMonitoring,completionRepeat:input.value.repeat,completionMaxSends:input.value.maxSends });}
+          state.tasks[0].detailRevision++;
+        }
+        const result = url.pathname === '/api/tasks/fixture-monitor' && req.method === 'GET' ? { task: state.tasks[0] }
+          : url.pathname === '/api/threads' ? { data: [{ id: threadId, name: 'Fixture chat', cwd: 'E:\\fixture' }], nextCursor: null } : state;
         res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(result)); return;
       }
       try { if (await serve(req, res, url)) return; } catch {}
@@ -96,16 +106,51 @@ app.whenReady().then(async () => {
       }
       await until("!!document.querySelector('#import-form [name=startMonitoring]')");
       assert.equal(await evaluate("document.querySelector('[name=startMonitoring]').checked"), false);
+      assert.equal(await evaluate("document.querySelector('[name=completionMonitoring]').checked"), false);
+      assert.equal(await evaluate("document.querySelector('[name=quotaMonitoring]').checked"), true);
+      assert.equal(await evaluate("document.querySelector('[name=completionRepeat]').checked"), false);
       assert.equal(await evaluate("document.querySelector('[name=startMonitoring]').parentElement.textContent.includes('加入后开始监测')"), true);
       await evaluate("document.querySelector('[name=startMonitoring]').checked=true; document.querySelector('[name=note]').value='Local note'; document.querySelector('[name=continuationMessage]').value='Continue this'");
+      await evaluate("document.querySelector('[name=completionMonitoring]').checked=true; document.querySelector('[name=completionMessage]').value='下一项工作'");
+      await evaluate("document.querySelector('[name=quotaMonitoring]').checked=false;document.querySelector('[name=completionRepeat]').checked=true;document.querySelector('[name=completionMaxSends]').value='3'");
       assert.equal(await evaluate("document.querySelector('[name=startMonitoring]').getClientRects().length > 0"), true);
       state.settings.language = 'en'; await feed();
       assert.equal(await evaluate("document.querySelector('[name=startMonitoring]').checked"), true);
+      assert.equal(await evaluate("document.querySelector('[name=completionMonitoring]').checked"), true);
+      assert.equal(await evaluate("document.querySelector('[name=completionMessage]').value"), '下一项工作');
+      assert.equal(await evaluate("document.querySelector('[name=quotaMonitoring]').checked"), false);
+      assert.equal(await evaluate("document.querySelector('[name=completionRepeat]').checked"), true);
+      assert.equal(await evaluate("document.querySelector('[name=completionMaxSends]').value"), '3');
       assert.equal(await evaluate("document.querySelector('[name=startMonitoring]').parentElement.textContent.includes('Start monitoring after adding')"), true);
       await evaluate("document.querySelector('#import-form').requestSubmit()");
       await until("!document.querySelector('#modal').open");
       assert.equal(imports.length, 1);
-      assert.deepEqual(imports[0], { threadId, note: 'Local note', continuationMessage: 'Continue this', startMonitoring: true });
+      assert.deepEqual(imports[0], { threadId, note: 'Local note', continuationMessage: 'Continue this', startMonitoring: true, completionMonitoring: true, completionMessage: '下一项工作',quotaMonitoring:false,completionRepeat:true,completionMaxSends:3 });
+      await evaluate("document.querySelector('[data-action=detail][data-id=fixture-monitor]').click()");
+      await until("!!document.querySelector('[data-action=edit-completion]:not(:disabled)')");
+      await evaluate("document.querySelector('[data-action=edit-completion]').click()");
+      await until("!!document.querySelector('#completion-form')");
+      assert.equal(await evaluate("document.querySelector('[name=completionMessage]').value"), '下一项工作');
+      await evaluate("document.querySelector('[name=completionMonitoring]').checked=false; document.querySelector('[name=completionMessage]').value='Edited final follow-up'");
+      await evaluate("document.querySelector('[name=completionRepeat]').checked=false;document.querySelector('[name=completionMaxSends]').value='2'");
+      state.settings.language = 'zh'; await feed();
+      assert.equal(await evaluate("document.querySelector('[name=completionMonitoring]').checked"), false);
+      assert.equal(await evaluate("document.querySelector('[name=completionMessage]').value"), 'Edited final follow-up');
+      assert.equal(await evaluate("document.querySelector('[name=completionRepeat]').checked"), false);
+      assert.equal(await evaluate("document.querySelector('[name=completionMaxSends]').value"), '2');
+      await evaluate("document.querySelector('#completion-form').requestSubmit()");
+      await until("!document.querySelector('#modal').open");
+      assert.equal(state.tasks[0].completionMessage, 'Edited final follow-up');
+      assert.equal(state.tasks[0].completionMonitoring, false); assert.equal(state.tasks[0].continuationMessage, 'Continue this');
+      assert.equal(state.tasks[0].completionRepeat,false);assert.equal(state.tasks[0].completionMaxSends,2);assert.equal(state.tasks[0].quotaMonitoring,false);
+      for(const [action,field,value] of [['quota-monitoring','quotaMonitoring',true],['completion-monitoring','completionMonitoring',true],['quota-monitoring','quotaMonitoring',false]]){
+        const selector=surface==='page'?`[data-action="${action}"]`:`[data-monitor="${action}"]`;
+        await evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`);
+        for(let i=0;i<100 && state.tasks[0][field]!==value;i++)await delay(20);
+        assert.equal(state.tasks[0][field],value);
+        await until(surface==='page'?`document.querySelector(${JSON.stringify(selector)}).getAttribute('aria-checked')==='${value}'`:`document.querySelector(${JSON.stringify(selector)}).checked===${value}`);
+      }
+      assert.equal(state.tasks[0].completionMonitoring,true,'Turning quota off must retain the reply monitor');
       results.push({ surface, import: imports[0], defaultPaused: true, checkboxPreservedAcrossLanguage: true });
       win.destroy(); win = null;
     }

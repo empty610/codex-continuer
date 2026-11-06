@@ -22,6 +22,11 @@ export function quotaWindow(state, slot = 'primary', connected = true, now = Dat
   const all = Object.values(state.quota?.rateLimitsByLimitId || {}).filter(Boolean);
   const bucket = all.find(b => b.limitId === 'codex') || all[0] || state.quota?.rateLimits;
   const targetDuration = slot === 'primary' ? 300 : 10080;
-  const window = [bucket?.primary,bucket?.secondary].find(w => w?.windowDurationMins === targetDuration) || bucket?.[slot];
+  const candidates = [bucket?.primary,bucket?.secondary].filter(Boolean);
+  const matched = candidates.find(w => w.windowDurationMins === targetDuration);
+  const fallback = bucket?.[slot];
+  // A standard window belongs only to its matching slot, even if the server
+  // returned it under primary (for example an account with just weekly quota).
+  const window = matched || (fallback && ![300,10080].includes(fallback.windowDurationMins) ? fallback : null);
   return { remaining: Number.isFinite(window?.usedPercent) ? Math.max(0,Math.min(100,100-window.usedPercent)) : null, resetsAt: Number.isFinite(window?.resetsAt) && window.resetsAt > 0 ? window.resetsAt : null, windowMinutes: window?.windowDurationMins ?? targetDuration };
 }

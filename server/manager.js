@@ -4,9 +4,10 @@ import { randomUUID } from 'node:crypto';
 import { ClientError } from './http-policy.js';
 import { quotaAvailable, progress, buckets, MAX_POLL_SECONDS } from './policy.js';
 import { tickQuotaWake } from './quota-wake.js';
+import { tickCompletionWake } from './completion-wake.js';
 import { removeCompletedTasks } from './state-lifecycle.js';
 import { createDirectTask, isActiveDirectTask, isRunnableDirectTask } from './direct-task.js';
-import { createMonitorTask, validateMonitorInput, isMonitorTask, enforceWakeLimit } from './monitor-task.js';
+import { createMonitorTask, validateMonitorInput, validateCompletionInput, isMonitorTask, enforceWakeLimit } from './monitor-task.js';
 import { taskModel } from './task-model.js';
 import { StatePersistence } from './state-persistence.js';
 import { TurnController } from './turn-controller.js';
@@ -23,7 +24,9 @@ export class Manager extends EventEmitter {
     this.wakeQuota = null; this.wakeSampledAt = null;
     this.observationOnly = observeOnly;
     this.scheduleEpoch = 0; this.stopped = false;
-    this.wakeExecutions = new Map(); this.detailVersions = new WeakMap();
+    this.instanceId = randomUUID(); this.snapshotRevision = 0;
+    this.on('change', () => { this.snapshotRevision++; });
+    this.wakeExecutions = new Map(); this.completionChecks = new Map(); this.detailVersions = new WeakMap();
     this.connection = { status: 'disconnected', ...messageFields(textMessage("connection.connecting_to_local_codex")) };
     this.quota = null;
     this.sampledAt = null;
@@ -64,7 +67,7 @@ export class Manager extends EventEmitter {
   get approvals() { return this.turns.approvals; }
   get executions() { return this.turns.executions; }
   snapshot({ details = true } = {}) {
-    const snapshot = { ...this.state, ...config.appInfo(), settings: { ...this.state.settings, enabled: this.state.settings.enabled && !this.observationOnly }, observationOnly: this.observationOnly,
+    const snapshot = { ...this.state, ...config.appInfo(), instanceId: this.instanceId, snapshotRevision: this.snapshotRevision, settings: { ...this.state.settings, enabled: this.state.settings.enabled && !this.observationOnly }, observationOnly: this.observationOnly,
       persistence: { ...this.persistence, ...this.store.status?.(), pending: this.pendingSave },
       tasks: this.state.tasks.map(task => this.taskSnapshot(task)), connection: this.connection, quota: this.quota, sampledAt: this.sampledAt, demo: this.demo, approvals: [...this.approvals.values()] };
     return details ? snapshot : compactSummary(snapshot);
@@ -72,11 +75,11 @@ export class Manager extends EventEmitter {
   taskSnapshot(id) {
     const task = typeof id === 'object' ? id : this.state.tasks.find(t => t.id === id);
     if (!task) return null;
-    const fields = ['name', 'prompt', 'note', 'continuationMessage', 'output', 'outputTruncated', 'plan', 'outcome', 'cwd', 'activity', 'activityMessage', 'toolCount', 'lastError', 'turnId'];
+    const fields = ['name', 'prompt', 'note', 'continuationMessage', 'quotaMonitoring', 'completionMonitoring', 'completionRepeat', 'completionMaxSends', 'completionSends', 'completionMessage', 'output', 'outputTruncated', 'plan', 'outcome', 'cwd', 'activity', 'activityMessage', 'toolCount', 'lastError', 'turnId'];
     const values = fields.map(key => task[key]);
     const previous = this.detailVersions.get(task);
     if (!previous || values.some((value, index) => value !== previous.values[index])) this.detailVersions.set(task, { values, revision: (previous?.revision || 0) + 1 });
-    return { ...task, progress: isMonitorTask(task) ? null : progress(task.plan), detailRevision: this.detailVersions.get(task).revision };
+    return { ...task, progress: isMonitorTask(task) ? null : progress(task.plan), detailInstanceId: this.instanceId, detailRevision: this.detailVersions.get(task).revision };
   }
   canSchedule(epoch = this.scheduleEpoch) {
     return epoch === this.scheduleEpoch && !this.stopped && !this.observationOnly && this.persistence.status === 'ok' && this.state.settings.enabled && this.rpc.ready && this.connection.status === 'connected';
@@ -112,6 +115,7 @@ export class Manager extends EventEmitter {
   }
   clearCompletedTasks() {
     const completedIds = removeCompletedTasks(this.state);
+    for (const id of completedIds) this.completionChecks.delete(id);
     for (const [id, request] of this.approvals) if (completedIds.has(request.taskId)) this.approvals.delete(id);
     return completedIds.size > 0;
   }
@@ -179,6 +183,7 @@ export class Manager extends EventEmitter {
     const epoch = this.scheduleEpoch;
     this.scheduling = true;
     try {
+      await tickCompletionWake(this, epoch);
       await tickQuotaWake(this, epoch);
       if (!this.canSchedule(epoch)) return;
       if (this.state.tasks.some(isActiveDirectTask)) return;
@@ -210,7 +215,18 @@ export class Manager extends EventEmitter {
   create(input) {
     if (this.state.tasks.length >= 100) throw new ClientError(textMessage("error.up_to_records_are_supported_end_unused_work"));
     const task = createDirectTask(input, { demo: this.demo });
-    this.state.tasks.unshift(task); this.log(textMessage("log.work_added", { name: task.name })); this.changed(); this.activate(); return task;
+    this.addTask(task, textMessage("log.work_added", { name: task.name })); this.activate(); return task;
+  }
+  addTask(task, logMessage) {
+    const tasks = this.state.tasks, logs = this.state.logs.slice();
+    this.state.tasks = [task, ...tasks]; this.log(logMessage);
+    try { this.changed(); }
+    catch (error) {
+      // Failed additions must be safe to retry; retain the storage error and
+      // paused scheduling without retaining an unacknowledged new record.
+      this.state.tasks = tasks; this.state.logs = logs; this.emit('change');
+      throw error;
+    }
   }
   async action(id, action, value) {
     const task = this.state.tasks.find(t => t.id === id);
@@ -218,6 +234,7 @@ export class Manager extends EventEmitter {
     const transition = taskModel(task).action(task, action, value, {
       sending: this.wakeExecutions.has(task.id), maxWakeSends: this.state.settings.maxWakeSends,
     });
+    if (['completion','completion-monitoring','resume'].includes(action) || (action === 'continuous' && value === true)) this.completionChecks.delete(task.id);
     if (transition.logMessage) this.log(transition.logMessage, 'info', task.id);
     if (transition.kind === 'pause-turn') {
       this.turns.cancelApprovals(task);
@@ -244,12 +261,13 @@ export class Manager extends EventEmitter {
     if (input.enabled === true) this.activate();
   }
   async listThreads(cursor = null) { await this.rpc.connect?.(); return this.rpc.call('thread/list', { limit: 30, sortKey: 'updated_at', cursor }); }
-  async importThread(id, note = '', continuationMessage = '', { startMonitoring = false } = {}) {
+  async importThread(id, note = '', continuationMessage = '', { startMonitoring = false, completionMonitoring = false, completionMessage = '', quotaMonitoring = true, completionRepeat = false, completionMaxSends = 20 } = {}) {
     if (typeof startMonitoring !== 'boolean') throw new ClientError(textMessage("error.invalid_switch_value"));
     if (this.state.tasks.some(t => t.threadId === id)) throw new ClientError(textMessage("error.this_chat_has_already_been_added"));
     if (this.importingThreads.has(id)) throw new ClientError(textMessage("error.this_chat_is_being_added_do_not_import"));
     if (this.state.tasks.length >= 100) throw new ClientError(textMessage("error.up_to_records_are_supported_end_unused_work"));
     validateMonitorInput(note, continuationMessage);
+    validateCompletionInput(completionMonitoring, completionMessage, {quotaMonitoring,repeat:completionRepeat,maxSends:completionMaxSends});
     // Reserve before yielding: HTTP and MCP imports share this manager.
     this.importingThreads.add(id);
     try {
@@ -257,9 +275,9 @@ export class Manager extends EventEmitter {
       // Another task path may have claimed the thread while the read was pending.
       if (this.state.tasks.some(t => t.threadId === id)) throw new ClientError(textMessage("error.this_chat_has_already_been_added"));
       if (this.state.tasks.length >= 100) throw new ClientError(textMessage("error.up_to_records_are_supported_end_unused_work"));
-      const task = createMonitorTask(id, thread, note, continuationMessage);
+      const task = createMonitorTask(id, thread, note, continuationMessage, { completionMonitoring, completionMessage, quotaMonitoring, completionRepeat, completionMaxSends });
       if (startMonitoring) taskModel(task).action(task, 'resume', undefined, { sending: false, maxWakeSends: this.state.settings.maxWakeSends });
-      this.state.tasks.unshift(task); this.log(textMessage("log.chat_added", { name: task.name })); this.changed();
+      this.addTask(task, textMessage("log.chat_added", { name: task.name }));
       if (startMonitoring) this.activate();
       return task;
     } finally { this.importingThreads.delete(id); }

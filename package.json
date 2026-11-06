@@ -20,7 +20,7 @@
     "build:release": "node scripts/build-release.js"
   },
   "devDependencies": {
-    "electron": "45.0.0"
+    "electron": "45.2.1"
   },
   "license": "GPL-3.0-only",
   "repository": {

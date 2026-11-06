@@ -12,7 +12,9 @@ if ($Phase -eq 'watcher') {
     $continuerSaved = Get-Content -LiteralPath $continuerStatusFile -Raw -Encoding UTF8 | ConvertFrom-Json
     if (-not $continuerSaved.pid -or -not $continuerSaved.pluginRoot -or [IO.Path]::GetFullPath($continuerSaved.pluginRoot).TrimEnd('\') -ne $continuerRoot) { exit 0 }
     $continuerProcess = Get-CimInstance Win32_Process -Filter "ProcessId=$([int]$continuerSaved.pid)"
-    $continuerNative = $continuerProcess -and $continuerProcess.ExecutablePath -eq (Join-Path $continuerRoot 'desktop/continuer-monitor.exe') -and $continuerProcess.CommandLine -match '(?:^|\s)"?--watch"?(?:\s|$)'
+    # CIM may report an 8.3 alias for the same executable. Normalize both paths
+    # before checking ownership, just as the saved plugin root is normalized.
+    $continuerNative = $continuerProcess -and $continuerProcess.ExecutablePath -and [IO.Path]::GetFullPath($continuerProcess.ExecutablePath) -eq (Join-Path $continuerRoot 'desktop/continuer-monitor.exe') -and $continuerProcess.CommandLine -match '(?:^|\s)"?--watch"?(?:\s|$)'
     $continuerLegacy = $continuerProcess -and $continuerProcess.Name -eq 'powershell.exe' -and (Test-ContinuerCommand $continuerProcess (Join-Path $continuerRoot 'desktop/watch-codex.ps1'))
     if ($continuerNative -or $continuerLegacy) {
         $continuerLaunchers = @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$($continuerProcess.ProcessId)" | Where-Object { $_.Name -eq 'node.exe' -and (Test-ContinuerCommand $_ (Join-Path $continuerRoot 'plugin/open.js')) })

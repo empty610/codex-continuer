@@ -144,7 +144,7 @@ for (const [layout, createView] of [['page', pageView], ['widget', widgetView]])
 for (const [layout, createView] of [['page', pageView], ['widget', widgetView]]) {
   test(`${layout} saves a separate completion message and toggle without changing quota message`, async () => {
     const task = watched(), state = snapshot([task]);
-    task.completionMessage = '</textarea><script>自定义</script>'; task.completionMonitoring = true;
+    task.completionMessage = '</textarea><script>自定义</script><SCRIPT>大写标签</SCRIPT>'; task.completionMonitoring = true;
     const view = createView({ task: async (_path, options) => {
       if (options.method !== 'POST') return { task };
       const body = JSON.parse(options.body);
@@ -155,7 +155,8 @@ for (const [layout, createView] of [['page', pageView], ['widget', widgetView]])
     await view.action('edit-completion', task.id);
     assert.match(view.element('#modal-body').innerHTML, /name="completionMonitoring"[^>]*checked/);
     assert.match(view.element('#modal-body').innerHTML, /&lt;script&gt;/);
-    assert.doesNotMatch(view.element('#modal-body').innerHTML, /<script>/);
+    assert.match(view.element('#modal-body').innerHTML, /&lt;SCRIPT&gt;/);
+    assert.doesNotMatch(view.element('#modal-body').innerHTML, /<script\b/i);
     await view.submit('completion-form', { completionMessage: '下一项工作\n先验证', quotaMonitoring:'on',completionRepeat:'on',completionMaxSends:'3' }, { id: task.id });
     assert.equal(task.continuationMessage, 'Saved message'); assert.equal(task.completionMonitoring, false);
     assert.equal(view.element('#modal').open, false);

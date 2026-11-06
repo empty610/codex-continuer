@@ -50,8 +50,22 @@ test('autostart enable and disable share runtime data selection without changing
         }
         const stopTrace=join(source,'stop-calls.txt');
         await execute('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',join(root,'tests/fixtures/autostart-host.ps1'),'-Script',join(root,'plugin/stop-owned.ps1'),'-PluginRoot',source,'-DataDir',before,'-Trace',stopTrace,'-WatcherPid','424242','-StopOnly'],{env,windowsHide:true});
-        assert.match(readFileSync(stopTrace,'utf8'),/stop/);
+        assert.match(readFileSync(stopTrace,'utf8'),/stop/, `${variant}/${disable}: stop the selected watcher`);
       }
     }
+  } finally { assert.equal(dirname(realpathSync(directory)), parent); rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('watcher cleanup recognizes a verified executable reported through its Windows short path', { skip: process.platform !== 'win32' }, async () => {
+  const parent = realpathSync(tmpdir()), directory = mkdtempSync(join(parent, 'continuer-short-path-'));
+  try {
+    // No files are created in Program Files; these paths only identify a mocked process.
+    const pluginRoot = join(process.env.ProgramFiles, 'continuer-fixture'), processRoot = join(process.env.SystemDrive + '/', 'PROGRA~1', 'continuer-fixture');
+    writeFileSync(join(directory, 'autostart-status.json'), JSON.stringify({ pid: 424242, pluginRoot }));
+    const trace = join(directory, 'stop.txt');
+    await execute('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', join(root, 'tests/fixtures/autostart-host.ps1'),
+      '-Script', join(root, 'plugin/stop-owned.ps1'), '-PluginRoot', pluginRoot, '-ProcessRoot', processRoot, '-DataDir', directory,
+      '-Trace', trace, '-WatcherPid', '424242', '-StopOnly'], { windowsHide: true });
+    assert.match(readFileSync(trace, 'utf8'), /stop/);
   } finally { assert.equal(dirname(realpathSync(directory)), parent); rmSync(directory, { recursive: true, force: true }); }
 });

@@ -1,4 +1,4 @@
-param([string]$Script, [string]$PluginRoot, [string]$Trace, [switch]$Disable, [int]$WatcherPid = 0, [switch]$ExistingRegistry, [switch]$StopOnly, [string]$DataDir)
+param([string]$Script, [string]$PluginRoot, [string]$Trace, [switch]$Disable, [int]$WatcherPid = 0, [switch]$ExistingRegistry, [switch]$StopOnly, [string]$DataDir, [string]$ProcessRoot)
 $ErrorActionPreference = 'Stop'
 # Execute the complete installer with OS boundaries mocked. File writes stay in
 # the isolated fixture; registry and background launch operations are recorded.
@@ -25,7 +25,8 @@ function Get-CimInstance {
     if ($Filter -like 'ParentProcessId=*') { return @() }
     if ($Filter -ne "ProcessId=$WatcherPid") { throw 'Unexpected PID' }
     Add-Content -LiteralPath $Trace -Value 'query'
-    return [pscustomobject]@{ ProcessId=$WatcherPid; Name='continuer-monitor.exe'; ExecutablePath=(Join-Path $PluginRoot 'desktop/continuer-monitor.exe'); CommandLine='fixture --watch' }
+    $processPluginRoot = if ($ProcessRoot) { $ProcessRoot } else { $PluginRoot }
+    return [pscustomobject]@{ ProcessId=$WatcherPid; Name='continuer-monitor.exe'; ExecutablePath=(Join-Path $processPluginRoot 'desktop/continuer-monitor.exe'); CommandLine='fixture --watch' }
 }
 function Stop-Process { param($Id,$ErrorAction) if ($Id -ne $WatcherPid) { throw 'Unexpected stop' }; Add-Content -LiteralPath $Trace -Value 'stop' }
 function New-Object {

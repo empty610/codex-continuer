@@ -40,7 +40,9 @@ test('autostart enable and disable share runtime data selection without changing
           assert.match(readFileSync(trace, 'utf8'), /shortcut:.*watch-codex\.ps1/);
           assert.doesNotMatch(readFileSync(trace, 'utf8'), /registry:/);
           const shortcut = JSON.parse(readFileSync(join(source, 'fixture-startup/CodexContinuer.lnk'), 'utf8').replace(/^\uFEFF/, ''));
-          assert.ok(shortcut.Arguments.includes(before));
+          const dataArgument = /(?:^|\s)-DataDir "([^"]+)"(?:\s|$)/.exec(shortcut.Arguments)?.[1];
+          assert.ok(dataArgument, `${variant}/${disable}: preserve the complete data argument`);
+          assert.equal(realpathSync(dataArgument), realpathSync(before), `${variant}/${disable}: shortcut selects the same physical data directory`);
           assert.equal(shortcut.WindowStyle, 7);
           if (variant === 'environment') {
             await execute('powershell.exe', ['-NoProfile','-ExecutionPolicy','Bypass','-File',join(root,'tests/fixtures/autostart-host.ps1'),'-Script',join(root,'Enable-Autostart.ps1'),'-PluginRoot',source,'-Trace',trace,'-WatcherPid','424242','-ExistingRegistry','-Disable'], {env,windowsHide:true});

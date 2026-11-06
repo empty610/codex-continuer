@@ -9,7 +9,7 @@ import { promisify } from 'node:util';
 
 const execute = promisify(execFile), root = fileURLToPath(new URL('..', import.meta.url));
 test('autostart enable and disable share runtime data selection without changing its default', { skip: process.platform !== 'win32' }, async () => {
-  const parent = realpathSync(tmpdir()), directory = mkdtempSync(join(parent, 'continuer-autostart-'));
+  const parent = realpathSync.native(tmpdir()), directory = mkdtempSync(join(parent, 'continuer-autostart-'));
   try {
     for (const variant of ['source', 'existing-data', 'portable', 'configured', 'environment']) {
       for (const disable of [false, true]) {
@@ -42,7 +42,7 @@ test('autostart enable and disable share runtime data selection without changing
           const shortcut = JSON.parse(readFileSync(join(source, 'fixture-startup/CodexContinuer.lnk'), 'utf8').replace(/^\uFEFF/, ''));
           const dataArgument = /(?:^|\s)-DataDir "([^"]+)"(?:\s|$)/.exec(shortcut.Arguments)?.[1];
           assert.ok(dataArgument, `${variant}/${disable}: preserve the complete data argument`);
-          assert.equal(realpathSync(dataArgument), realpathSync(before), `${variant}/${disable}: shortcut selects the same physical data directory`);
+          assert.equal(realpathSync.native(dataArgument), realpathSync.native(before), `${variant}/${disable}: shortcut selects the same physical data directory`);
           assert.equal(shortcut.WindowStyle, 7);
           if (variant === 'environment') {
             await execute('powershell.exe', ['-NoProfile','-ExecutionPolicy','Bypass','-File',join(root,'tests/fixtures/autostart-host.ps1'),'-Script',join(root,'Enable-Autostart.ps1'),'-PluginRoot',source,'-Trace',trace,'-WatcherPid','424242','-ExistingRegistry','-Disable'], {env,windowsHide:true});
@@ -55,11 +55,11 @@ test('autostart enable and disable share runtime data selection without changing
         assert.match(readFileSync(stopTrace,'utf8'),/stop/, `${variant}/${disable}: stop the selected watcher`);
       }
     }
-  } finally { assert.equal(dirname(realpathSync(directory)), parent); rmSync(directory, { recursive: true, force: true }); }
+  } finally { assert.equal(dirname(realpathSync.native(directory)), parent); rmSync(directory, { recursive: true, force: true }); }
 });
 
 test('watcher cleanup recognizes a verified executable reported through its Windows short path', { skip: process.platform !== 'win32' }, async () => {
-  const parent = realpathSync(tmpdir()), directory = mkdtempSync(join(parent, 'continuer-short-path-'));
+  const parent = realpathSync.native(tmpdir()), directory = mkdtempSync(join(parent, 'continuer-short-path-'));
   try {
     // No files are created in Program Files; these paths only identify a mocked process.
     const pluginRoot = join(process.env.ProgramFiles, 'continuer-fixture'), processRoot = join(process.env.SystemDrive + '/', 'PROGRA~1', 'continuer-fixture');
@@ -69,5 +69,5 @@ test('watcher cleanup recognizes a verified executable reported through its Wind
       '-Script', join(root, 'plugin/stop-owned.ps1'), '-PluginRoot', pluginRoot, '-ProcessRoot', processRoot, '-DataDir', directory,
       '-Trace', trace, '-WatcherPid', '424242', '-StopOnly'], { windowsHide: true });
     assert.match(readFileSync(trace, 'utf8'), /stop/);
-  } finally { assert.equal(dirname(realpathSync(directory)), parent); rmSync(directory, { recursive: true, force: true }); }
+  } finally { assert.equal(dirname(realpathSync.native(directory)), parent); rmSync(directory, { recursive: true, force: true }); }
 });

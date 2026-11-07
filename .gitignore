@@ -3,6 +3,7 @@ data/
 .cache/
 dist/
 *.log
+*.lnk
 desktop/continuer-monitor.exe
 runtime.json
 .env
